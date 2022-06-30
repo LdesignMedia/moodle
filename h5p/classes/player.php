@@ -126,7 +126,7 @@ class player {
         $this->core = $this->factory->get_core();
 
         // Get the H5P identifier linked to this URL.
-        list($file, $this->h5pid) = api::create_content_from_pluginfile_url(
+        [$file, $this->h5pid] = api::create_content_from_pluginfile_url(
             $url,
             $config,
             $this->factory,
@@ -179,7 +179,7 @@ class player {
         $template->embedurl = $fileurl->out(false);
 
         if ($displayedit) {
-            list($originalfile, $h5p) = api::get_original_content_from_pluginfile_url($url, $preventredirect, true);
+            [$originalfile, $h5p] = api::get_original_content_from_pluginfile_url($url, $preventredirect, true);
             if ($originalfile) {
                 // Check if the user can edit this content.
                 if (api::can_edit_content($originalfile)) {
