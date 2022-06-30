@@ -456,7 +456,43 @@ class player {
         $h5poutput->h5p_alter_scripts($files['scripts'], $preloadeddeps, $this->embedtype);
         $h5poutput->h5p_alter_styles($files['styles'], $preloadeddeps, $this->embedtype);
 
+        // Add additional files from callbacks.
+        $files['scripts'] = array_merge($files['scripts'], $this->load_files_plugin_callbacks('scripts'));
+        $files['styles'] = array_merge($files['styles'], $this->load_files_plugin_callbacks('styles'));
+
         return $files;
+    }
+
+    /**
+     * Load callback files from plugins only supports a array with PARAM_PATH
+     *
+     * @param string $type
+     *
+     * @return array
+     */
+    private function load_files_plugin_callbacks(string $type): array {
+
+        $pluginsfunction = get_plugins_with_function('extend_h5p_' . $type);
+
+        if (empty($pluginsfunction)) {
+            return [];
+        }
+
+        $files = [];
+        foreach ($pluginsfunction as $plugins) {
+            foreach ($plugins as $pluginfunction) {
+                $files = $pluginfunction($this->embedtype);
+
+                if (!is_array($files)) {
+                    debugging('Please make sure you return an array with files paths"' . s($pluginfunction) . '".',
+                        DEBUG_DEVELOPER);
+                }
+            }
+        }
+
+        return array_map(static function($path) {
+            return (object) ['path' => (string) $path];
+        }, $files);
     }
 
     /**
