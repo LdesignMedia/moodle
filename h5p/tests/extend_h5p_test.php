@@ -17,16 +17,15 @@
 /**
  * Testing the H5P PLAYER extend by plugin.
  *
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  *
- * @package   core_h5p
- * @copyright 2022-06-13 Mfreak.nl | LdesignMedia.nl - Luuk Verhoeven
- * @author    Hamza Tamyachte
+ * @package    core_h5p
+ * @category   test
+ * @copyright  2022-06-13 Mfreak.nl | LdesignMedia.nl - Luuk Verhoeven
+ * @author     Hamza Tamyachte
  **/
 
 namespace core_h5p;
-
-defined('MOODLE_INTERNAL') || die();
 
 /**
  * Testing the H5P PLAYER.
@@ -40,12 +39,15 @@ defined('MOODLE_INTERNAL') || die();
  **/
 class extend_h5p_test extends \advanced_testcase {
 
-
+    /** @var \core_h5p\player */
     protected $player;
 
-    public function set_up(): void {
+    /**
+     * Set up function for tests.
+     */
+    protected function setUp(): void {
 
-        $config = (object)[
+        $config = (object) [
             'frame' => 1,
             'export' => 1,
             'embed' => 0,
@@ -73,8 +75,9 @@ class extend_h5p_test extends \advanced_testcase {
     }
 
     /**
-     * @dataProvider add_assets_to_page_provider
+     * Test the behaviour of add_assets_to_page
      *
+     * @dataProvider add_assets_to_page_provider
      * @param string $embedtype
      *
      * @return void
@@ -82,17 +85,16 @@ class extend_h5p_test extends \advanced_testcase {
     public function test_add_assets_to_page(string $embedtype): void {
         global $OUTPUT, $DB;
 
-        $this->set_up();
-
         $this->setRunTestInSeparateProcess(true);
+
         // Reset database after test.
         $this->resetAfterTest(true);
 
         $this->player->add_assets_to_page();
 
         $h5p = $DB->get_record('h5p', []);
-        $template = (object)[
-            'h5pid' => $h5p->id
+        $template = (object) [
+            'h5pid' => $h5p->id,
         ];
 
         $h5pjson = json_decode($h5p->jsoncontent, false, 512, JSON_THROW_ON_ERROR);
@@ -116,12 +118,14 @@ class extend_h5p_test extends \advanced_testcase {
     public function add_assets_to_page_provider(): array {
         return [
             'player: embedtype is iframe' => [
-                'embedtype' => 'iframe'
+                'embedtype' => 'iframe',
             ],
         ];
     }
 
     /**
+     * Test the behaviour of load_files_plugin_callbacks callback
+     *
      * @dataProvider load_files_plugin_callbacks_provider
      *
      * @param string $type
@@ -139,9 +143,8 @@ class extend_h5p_test extends \advanced_testcase {
 
         $reflector = new \ReflectionClass(player::class);
         $loadfilesplugincallbacks = $reflector->getMethod('load_files_plugin_callbacks');
-        $loadfilesplugincallbacks->setAccessible( true );
+        $loadfilesplugincallbacks->setAccessible(true);
         $paths = $loadfilesplugincallbacks->invokeArgs($this->player, [$type]);
-
 
         $pluginsfunction = get_plugins_with_function('extend_h5p_' . $type);
         $files = [];
@@ -156,7 +159,7 @@ class extend_h5p_test extends \advanced_testcase {
 
         $this->assertCount(count($expectedpaths), $paths);
 
-        foreach ($expectedpaths as $key => $expectedpath)  {
+        foreach ($expectedpaths as $key => $expectedpath) {
             $this->assertEquals($expectedpath->path, $paths[$key]->path);
         }
     }
@@ -170,12 +173,13 @@ class extend_h5p_test extends \advanced_testcase {
         return [
             'player: Plugin function type is scripts and embedtype is iframe.' => [
                 'type' => 'scripts',
-                'embedtype' => 'iframe'
+                'embedtype' => 'iframe',
             ],
             'player:Plugin function type is styles and embedtype is iframe.' => [
                 'type' => 'styles',
-                'embedtype' => 'iframe'
+                'embedtype' => 'iframe',
             ],
         ];
     }
+
 }
