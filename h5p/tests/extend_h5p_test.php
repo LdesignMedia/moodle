@@ -39,7 +39,7 @@ namespace core_h5p;
  **/
 class extend_h5p_test extends \advanced_testcase {
 
-    /** @var \core_h5p\player */
+    /** @var player */
     protected $player;
 
     /**
@@ -136,7 +136,7 @@ class extend_h5p_test extends \advanced_testcase {
      */
     public function test_load_files_plugin_callbacks(string $type, string $embedtype): void {
 
-        $this->set_up();
+        $this->setUp();
 
         $this->setRunTestInSeparateProcess(true);
         // Reset database after test.
