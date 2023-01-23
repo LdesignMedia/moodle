@@ -27,7 +27,8 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/mod/quiz/lib.php');
 require_once($CFG->libdir . '/filelib.php');
-require_once($CFG->dirroot . '/mod/quiz/accessmanager.php');
+
+use mod_quiz\question\display_options;
 
 /**
  * Takes an array of objects and constructs a multidimensional array keyed by
@@ -90,36 +91,36 @@ function quiz_has_questions($quizid) {
 /**
  * Get the slots of real questions (not descriptions) in this quiz, in order.
  * @param object $quiz the quiz.
- * @return array of slot => $question object with fields
- *      ->slot, ->id, ->maxmark, ->number, ->length.
+ * @return array of slot => objects with fields
+ *      ->slot, ->id, ->qtype, ->length, ->number, ->maxmark, ->category (for random questions).
  */
 function quiz_report_get_significant_questions($quiz) {
     global $DB;
-    $qsbyslot = [];
-    $quizobj = \quiz::create($quiz->id);
+    $quizobj = mod_quiz\quiz_settings::create($quiz->id);
     $structure = \mod_quiz\structure::create_for_quiz($quizobj);
     $slots = $structure->get_slots();
+
+    $qsbyslot = [];
+    $number = 1;
     foreach ($slots as $slot) {
+        // Ignore 'questions' of zero length.
+        if ($slot->length == 0) {
+            continue;
+        }
+
         $slotreport = new \stdClass();
         $slotreport->slot = $slot->slot;
         $slotreport->id = $slot->questionid;
         $slotreport->qtype = $slot->qtype;
         $slotreport->length = $slot->length;
+        $slotreport->number = $number;
+        $number += $slot->length;
         $slotreport->maxmark = $slot->maxmark;
-        $slotreport->type = $slot->qtype;
-        if ($slot->qtype === 'random') {
-            $categoryobject = $DB->get_record('question_categories', ['id' => $slot->category]);
-            $slotreport->categoryobject = $categoryobject;
-            $slotreport->category = $slot->category;
-        }
+        $slotreport->category = $slot->category;
+
         $qsbyslot[$slotreport->slot] = $slotreport;
     }
-    ksort($qsbyslot);
-    $number = 1;
-    foreach ($qsbyslot as $question) {
-        $question->number = $number;
-        $number++;
-    }
+
     return $qsbyslot;
 }
 
@@ -426,11 +427,11 @@ function quiz_no_questions_message($quiz, $cm, $context) {
  */
 function quiz_report_should_show_grades($quiz, context $context) {
     if ($quiz->timeclose && time() > $quiz->timeclose) {
-        $when = mod_quiz_display_options::AFTER_CLOSE;
+        $when = display_options::AFTER_CLOSE;
     } else {
-        $when = mod_quiz_display_options::LATER_WHILE_OPEN;
+        $when = display_options::LATER_WHILE_OPEN;
     }
-    $reviewoptions = mod_quiz_display_options::make_from_quiz($quiz, $when);
+    $reviewoptions = display_options::make_from_quiz($quiz, $when);
 
     return quiz_has_grades($quiz) &&
             ($reviewoptions->marks >= question_display_options::MARK_AND_MAX ||

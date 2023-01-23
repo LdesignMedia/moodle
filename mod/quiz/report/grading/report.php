@@ -14,19 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * This file defines the quiz manual grading report class.
- *
- * @package   quiz_grading
- * @copyright 2006 Gustav Delius
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-
+use mod_quiz\local\reports\report_base;
+use mod_quiz\quiz_attempt;
 
 defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/mod/quiz/report/grading/gradingsettings_form.php');
-
 
 /**
  * Quiz report to help teachers manually grade questions that need it.
@@ -38,7 +31,7 @@ require_once($CFG->dirroot . '/mod/quiz/report/grading/gradingsettings_form.php'
  * @copyright 2006 Gustav Delius
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class quiz_grading_report extends quiz_default_report {
+class quiz_grading_report extends report_base {
     const DEFAULT_PAGE_SIZE = 5;
     const DEFAULT_ORDER = 'random';
 
@@ -384,7 +377,7 @@ class quiz_grading_report extends quiz_default_report {
 
             $row[] = $this->questions[$counts->slot]->number;
 
-            $row[] = $PAGE->get_renderer('question', 'bank')->qtype_icon($this->questions[$counts->slot]->type);
+            $row[] = $PAGE->get_renderer('question', 'bank')->qtype_icon($this->questions[$counts->slot]->qtype);
 
             $row[] = format_string($counts->name);
 

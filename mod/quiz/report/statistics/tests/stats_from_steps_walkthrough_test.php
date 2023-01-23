@@ -14,6 +14,20 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace quiz_statistics;
+
+use question_attempt;
+use question_bank;
+use question_finder;
+use quiz_statistics_report;
+
+defined('MOODLE_INTERNAL') || die();
+
+global $CFG;
+require_once($CFG->dirroot . '/mod/quiz/tests/attempt_walkthrough_from_csv_test.php');
+require_once($CFG->dirroot . '/mod/quiz/report/statistics/report.php');
+require_once($CFG->dirroot . '/mod/quiz/report/reportlib.php');
+
 /**
  * Quiz attempt walk through using data from csv file.
  *
@@ -26,30 +40,12 @@
  * variants appeared.
  *
  * @package    quiz_statistics
- * @category   phpunit
+ * @category   test
  * @copyright  2013 The Open University
  * @author     Jamie Pratt <me@jamiep.org>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
-defined('MOODLE_INTERNAL') || die();
-
-global $CFG;
-require_once($CFG->dirroot . '/mod/quiz/tests/attempt_walkthrough_from_csv_test.php');
-require_once($CFG->dirroot . '/mod/quiz/report/default.php');
-require_once($CFG->dirroot . '/mod/quiz/report/statistics/report.php');
-require_once($CFG->dirroot . '/mod/quiz/report/reportlib.php');
-
-/**
- * Quiz attempt walk through using data from csv file.
- *
- * @package    quiz_statistics
- * @category   phpunit
- * @copyright  2013 The Open University
- * @author     Jamie Pratt <me@jamiep.org>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-class quiz_report_statistics_from_steps_testcase extends mod_quiz_attempt_walkthrough_from_csv_testcase {
+class stats_from_steps_walkthrough_test extends \mod_quiz\attempt_walkthrough_from_csv_test {
 
     /**
      * @var quiz_statistics_report object to do stats calculations.
@@ -193,7 +189,7 @@ class quiz_report_statistics_from_steps_testcase extends mod_quiz_attempt_walkth
                 return;
             }
         }
-        throw new coding_exception("Expected response '{$expected['actualresponse']}' not found.");
+        throw new \coding_exception("Expected response '{$expected['actualresponse']}' not found.");
     }
 
     protected function get_response_subpart_and_class_id($question, $subpart, $modelresponse) {
@@ -201,7 +197,7 @@ class quiz_report_statistics_from_steps_testcase extends mod_quiz_attempt_walkth
         $possibleresponses = $qtypeobj->get_possible_responses($question);
         $possibleresponsesubpartids = array_keys($possibleresponses);
         if (!isset($possibleresponsesubpartids[$subpart - 1])) {
-            throw new coding_exception("Subpart '{$subpart}' not found.");
+            throw new \coding_exception("Subpart '{$subpart}' not found.");
         }
         $subpartid = $possibleresponsesubpartids[$subpart - 1];
 
@@ -373,7 +369,7 @@ class quiz_report_statistics_from_steps_testcase extends mod_quiz_attempt_walkth
 
         // We will create some quiz and question stat calculator instances and some response analyser instances, just in order
         // to check the last analysed time then returned.
-        $quizcalc = new \quiz_statistics\calculator();
+        $quizcalc = new calculator();
         // Should not be a delay of more than one second between the calculation of stats above and here.
         $this->assertTimeCurrent($quizcalc->get_last_calculated_time($qubaids));
 

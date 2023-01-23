@@ -14,23 +14,23 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Tests for the quiz overview report.
- *
- * @package   quiz_overview
- * @copyright 2014 The Open University
- * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace quiz_overview;
 
 use core_question\local\bank\question_version_status;
 use mod_quiz\external\submit_question_version;
+use mod_quiz\quiz_attempt;
+use question_engine;
+use mod_quiz\quiz_settings;
+use mod_quiz\local\reports\attempts_report;
+use quiz_overview_options;
+use quiz_overview_report;
+use quiz_overview_table;
 
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 require_once($CFG->dirroot . '/mod/quiz/report/reportlib.php');
-require_once($CFG->dirroot . '/mod/quiz/report/default.php');
 require_once($CFG->dirroot . '/mod/quiz/report/overview/report.php');
 require_once($CFG->dirroot . '/mod/quiz/report/overview/overview_form.php');
 require_once($CFG->dirroot . '/mod/quiz/report/overview/tests/helpers.php');
@@ -40,10 +40,11 @@ require_once($CFG->dirroot . '/mod/quiz/tests/quiz_question_helper_test_trait.ph
 /**
  * Tests for the quiz overview report.
  *
+ * @package    quiz_overview
  * @copyright  2014 The Open University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class quiz_overview_report_testcase extends advanced_testcase {
+class report_test extends \advanced_testcase {
     use \quiz_question_helper_test_trait;
 
     /**
@@ -121,7 +122,7 @@ class quiz_overview_report_testcase extends advanced_testcase {
             list($quiz, $student, $attemptnumber, $sumgrades, $state) = $attemptdata;
             $timestart = $timestamp + $attemptnumber * 3600;
 
-            $quizobj = quiz::create($quiz->id, $student->id);
+            $quizobj = quiz_settings::create($quiz->id, $student->id);
             $quba = question_engine::make_questions_usage_by_activity('mod_quiz', $quizobj->get_context());
             $quba->set_preferred_behaviour($quizobj->get_quiz()->preferredbehaviour);
 
@@ -153,7 +154,7 @@ class quiz_overview_report_testcase extends advanced_testcase {
                     $quba->get_question_attempt(1)->manual_grade(
                             'Comment', $sumgrades, FORMAT_HTML, $timestart + 1200);
                     question_engine::save_questions_usage_by_activity($quba);
-                    $update = new stdClass();
+                    $update = new \stdClass();
                     $update->id = $attemptobj->get_attemptid();
                     $update->timemodified = $timestart + 1200;
                     $update->sumgrades = $quba->get_total_mark();
@@ -165,7 +166,7 @@ class quiz_overview_report_testcase extends advanced_testcase {
 
         // Actually getting the SQL to run is quite hard. Do a minimal set up of
         // some objects.
-        $context = context_module::instance($quiz->cmid);
+        $context = \context_module::instance($quiz->cmid);
         $cm = get_coursemodule_from_id('quiz', $quiz->cmid);
         $qmsubselect = quiz_report_qm_filter_select($quiz);
         $studentsjoins = get_enrolled_with_capabilities_join($context, '',
@@ -174,7 +175,7 @@ class quiz_overview_report_testcase extends advanced_testcase {
 
         // Set the options.
         $reportoptions = new quiz_overview_options('overview', $quiz, $cm, null);
-        $reportoptions->attempts = quiz_attempts_report::ENROLLED_ALL;
+        $reportoptions->attempts = attempts_report::ENROLLED_ALL;
         $reportoptions->onlygraded = true;
         $reportoptions->states = array(quiz_attempt::IN_PROGRESS, quiz_attempt::OVERDUE, quiz_attempt::FINISHED);
 
@@ -186,7 +187,7 @@ class quiz_overview_report_testcase extends advanced_testcase {
         $table->download = $isdownloading; // Cannot call the is_downloading API, because it gives errors.
         $table->define_columns(array('fullname'));
         $table->sortable(true, 'uniqueid');
-        $table->define_baseurl(new moodle_url('/mod/quiz/report.php'));
+        $table->define_baseurl(new \moodle_url('/mod/quiz/report.php'));
         $table->setup();
 
         // Run the query.
@@ -224,7 +225,7 @@ class quiz_overview_report_testcase extends advanced_testcase {
         // Ensure that filtering by initial does not break it.
         // This involves setting a private properly of the base class, which is
         // only really possible using reflection :-(.
-        $reflectionobject = new ReflectionObject($table);
+        $reflectionobject = new \ReflectionObject($table);
         while ($parent = $reflectionobject->getParentClass()) {
             $reflectionobject = $parent;
         }
@@ -305,13 +306,13 @@ class quiz_overview_report_testcase extends advanced_testcase {
         $generator->enrol_user($student->id, $course->id);
         $generator->enrol_user($student->id, $course->id, null, 'self');
 
-        $context = context_module::instance($quiz->cmid);
+        $context = \context_module::instance($quiz->cmid);
         $cm = get_coursemodule_from_id('quiz', $quiz->cmid);
         $allowedjoins = get_enrolled_with_capabilities_join($context, '', ['mod/quiz:attempt', 'mod/quiz:reviewmyattempts']);
-        $quizattemptsreport = new testable_quiz_attempts_report();
+        $quizattemptsreport = new \testable_quiz_attempts_report();
 
         // Create the new attempt and initialize the question sessions.
-        $quizobj = quiz::create($quiz->id, $student->id);
+        $quizobj = quiz_settings::create($quiz->id, $student->id);
         $quba = question_engine::make_questions_usage_by_activity('mod_quiz', $quizobj->get_context());
         $quba->set_preferred_behaviour($quizobj->get_quiz()->preferredbehaviour);
         $attempt = quiz_create_attempt($quizobj, 1, null, $timestart, false, $student->id);
@@ -335,7 +336,7 @@ class quiz_overview_report_testcase extends advanced_testcase {
         $course = $this->getDataGenerator()->create_course();
         $quiz = $this->create_test_quiz($course);
         $cm = get_fast_modinfo($course->id)->get_cm($quiz->cmid);
-        $context = context_module::instance($quiz->cmid);
+        $context = \context_module::instance($quiz->cmid);
 
         /** @var core_question_generator $questiongenerator */
         $questiongenerator = $this->getDataGenerator()->get_plugin_generator('core_question');
@@ -357,7 +358,7 @@ class quiz_overview_report_testcase extends advanced_testcase {
         quiz_add_quiz_question($q2->id, $quiz, 0, 10);
 
         // Attempt the quiz, submitting response 'toad'.
-        $quizobj = quiz::create($quiz->id);
+        $quizobj = quiz_settings::create($quiz->id);
         $attempt = quiz_prepare_and_start_new_attempt($quizobj, 1, null);
         $attemptobj = quiz_attempt::create($attempt->id);
         $attemptobj->process_submitted_actions(time(), false, [1 => ['answer' => 'toad']]);

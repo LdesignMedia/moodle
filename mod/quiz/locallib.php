@@ -31,15 +31,15 @@
 defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/mod/quiz/lib.php');
-require_once($CFG->dirroot . '/mod/quiz/accessmanager.php');
-require_once($CFG->dirroot . '/mod/quiz/accessmanager_form.php');
-require_once($CFG->dirroot . '/mod/quiz/renderer.php');
-require_once($CFG->dirroot . '/mod/quiz/attemptlib.php');
 require_once($CFG->libdir . '/completionlib.php');
 require_once($CFG->libdir . '/filelib.php');
 require_once($CFG->libdir . '/questionlib.php');
 
+use mod_quiz\access_manager;
 use mod_quiz\question\bank\qbank_helper;
+use mod_quiz\question\display_options;
+use mod_quiz\quiz_attempt;
+use mod_quiz\quiz_settings;
 
 /**
  * @var int We show the countdown timer if there is less than this amount of time left before the
@@ -81,7 +81,7 @@ define('QUIZ_SHOWIMAGE_LARGE', 2);
  *
  * @param object $quizobj the quiz object to create an attempt for.
  * @param int $attemptnumber the sequence number for the attempt.
- * @param stdClass|null $lastattempt the previous attempt by this user, if any. Only needed
+ * @param stdClass|false $lastattempt the previous attempt by this user, if any. Only needed
  *         if $attemptnumber > 1 and $quiz->attemptonlast is true.
  * @param int $timenow the time the attempt was started at.
  * @param bool $ispreview whether this new attempt is a preview.
@@ -89,7 +89,7 @@ define('QUIZ_SHOWIMAGE_LARGE', 2);
  *
  * @return object the newly created attempt object.
  */
-function quiz_create_attempt(quiz $quizobj, $attemptnumber, $lastattempt, $timenow, $ispreview = false, $userid = null) {
+function quiz_create_attempt(quiz_settings $quizobj, $attemptnumber, $lastattempt, $timenow, $ispreview = false, $userid = null) {
     global $USER;
 
     if ($userid === null) {
@@ -113,7 +113,7 @@ function quiz_create_attempt(quiz $quizobj, $attemptnumber, $lastattempt, $timen
     } else {
         // Build on last attempt.
         if (empty($lastattempt)) {
-            print_error('cannotfindprevattempt', 'quiz');
+            throw new \moodle_exception('cannotfindprevattempt', 'quiz');
         }
         $attempt = $lastattempt;
     }
@@ -145,17 +145,16 @@ function quiz_create_attempt(quiz $quizobj, $attemptnumber, $lastattempt, $timen
 /**
  * Start a normal, new, quiz attempt.
  *
- * @param quiz      $quizobj            the quiz object to start an attempt for.
+ * @param quiz_settings $quizobj        the quiz object to start an attempt for.
  * @param question_usage_by_activity $quba
  * @param object    $attempt
  * @param integer   $attemptnumber      starting from 1
  * @param integer   $timenow            the attempt start time
  * @param array     $questionids        slot number => question id. Used for random questions, to force the choice
- *                                        of a particular actual question. Intended for testing purposes only.
+ *                                      of a particular actual question. Intended for testing purposes only.
  * @param array     $forcedvariantsbyslot slot number => variant. Used for questions with variants,
- *                                          to force the choice of a particular variant. Intended for testing
- *                                          purposes only.
- * @throws moodle_exception
+ *                                        to force the choice of a particular variant. Intended for testing
+ *                                        purposes only.
  * @return object   modified attempt object
  */
 function quiz_start_new_attempt($quizobj, $quba, $attempt, $attemptnumber, $timenow,
@@ -340,7 +339,7 @@ function quiz_start_attempt_built_on_last($quba, $attempt, $lastattempt) {
 /**
  * The save started question usage and quiz attempt in db and log the started attempt.
  *
- * @param quiz                       $quizobj
+ * @param quiz_settings $quizobj
  * @param question_usage_by_activity $quba
  * @param object                     $attempt
  * @return object                    attempt object with uniqueid and id set.
@@ -585,8 +584,8 @@ function quiz_feedback_record_for_grade($grade, $quiz) {
  * got this grade on this quiz. The feedback is processed ready for diplay.
  *
  * @param float $grade a grade on this quiz.
- * @param object $quiz the quiz settings.
- * @param object $context the quiz context.
+ * @param stdClass $quiz the quiz settings.
+ * @param context_module $context the quiz context.
  * @return string the comment that corresponds to this grade (empty string if there is not one.
  */
 function quiz_feedback_for_grade($grade, $quiz, $context) {
@@ -1354,7 +1353,7 @@ function quiz_questions_per_page_options() {
 
 /**
  * Get the human-readable name for a quiz attempt state.
- * @param string $state one of the state constants like {@link quiz_attempt::IN_PROGRESS}.
+ * @param string $state one of the state constants like {@see quiz_attempt::IN_PROGRESS}.
  * @return string The lang string to describe that state.
  */
 function quiz_attempt_state_name($state) {
@@ -1450,8 +1449,8 @@ function quiz_question_edit_button($cmid, $question, $returnurl, $contentafteric
  */
 function quiz_question_preview_url($quiz, $question, $variant = null) {
     // Get the appropriate display options.
-    $displayoptions = mod_quiz_display_options::make_from_quiz($quiz,
-            mod_quiz_display_options::DURING);
+    $displayoptions = display_options::make_from_quiz($quiz,
+            display_options::DURING);
 
     $maxmark = null;
     if (isset($question->maxmark)) {
@@ -1500,33 +1499,32 @@ function quiz_get_flag_option($attempt, $context) {
  * quiz_get_review_options, not in the sense of $attempt->state.
  * @param object $quiz the quiz settings
  * @param object $attempt the quiz_attempt database row.
- * @return int one of the mod_quiz_display_options::DURING,
+ * @return int one of the display_options::DURING,
  *      IMMEDIATELY_AFTER, LATER_WHILE_OPEN or AFTER_CLOSE constants.
  */
 function quiz_attempt_state($quiz, $attempt) {
     if ($attempt->state == quiz_attempt::IN_PROGRESS) {
-        return mod_quiz_display_options::DURING;
+        return display_options::DURING;
     } else if ($quiz->timeclose && time() >= $quiz->timeclose) {
-        return mod_quiz_display_options::AFTER_CLOSE;
+        return display_options::AFTER_CLOSE;
     } else if (time() < $attempt->timefinish + 120) {
-        return mod_quiz_display_options::IMMEDIATELY_AFTER;
+        return display_options::IMMEDIATELY_AFTER;
     } else {
-        return mod_quiz_display_options::LATER_WHILE_OPEN;
+        return display_options::LATER_WHILE_OPEN;
     }
 }
 
 /**
- * The the appropraite mod_quiz_display_options object for this attempt at this
- * quiz right now.
+ * The appropriate display_options object for this attempt at this quiz right now.
  *
  * @param stdClass $quiz the quiz instance.
  * @param stdClass $attempt the attempt in question.
  * @param context $context the quiz context.
  *
- * @return mod_quiz_display_options
+ * @return display_options
  */
 function quiz_get_review_options($quiz, $attempt, $context) {
-    $options = mod_quiz_display_options::make_from_quiz($quiz, quiz_attempt_state($quiz, $attempt));
+    $options = display_options::make_from_quiz($quiz, quiz_attempt_state($quiz, $attempt));
 
     $options->readonly = true;
     $options->flags = quiz_get_flag_option($attempt, $context);
@@ -1595,7 +1593,7 @@ function quiz_get_combined_reviewoptions($quiz, $attempts) {
     }
 
     foreach ($attempts as $attempt) {
-        $attemptoptions = mod_quiz_display_options::make_from_quiz($quiz,
+        $attemptoptions = display_options::make_from_quiz($quiz,
                 quiz_attempt_state($quiz, $attempt));
         foreach ($fields as $field) {
             $someoptions->$field = $someoptions->$field || $attemptoptions->$field;
@@ -1959,42 +1957,6 @@ function quiz_send_notify_manual_graded_message(quiz_attempt $attemptobj, object
     return message_send($eventdata);
 }
 
-/**
- * Handle groups_member_added event
- *
- * @param object $event the event object.
- * @deprecated since 2.6, see {@link \mod_quiz\group_observers::group_member_added()}.
- */
-function quiz_groups_member_added_handler($event) {
-    debugging('quiz_groups_member_added_handler() is deprecated, please use ' .
-        '\mod_quiz\group_observers::group_member_added() instead.', DEBUG_DEVELOPER);
-    quiz_update_open_attempts(array('userid'=>$event->userid, 'groupid'=>$event->groupid));
-}
-
-/**
- * Handle groups_member_removed event
- *
- * @param object $event the event object.
- * @deprecated since 2.6, see {@link \mod_quiz\group_observers::group_member_removed()}.
- */
-function quiz_groups_member_removed_handler($event) {
-    debugging('quiz_groups_member_removed_handler() is deprecated, please use ' .
-        '\mod_quiz\group_observers::group_member_removed() instead.', DEBUG_DEVELOPER);
-    quiz_update_open_attempts(array('userid'=>$event->userid, 'groupid'=>$event->groupid));
-}
-
-/**
- * Handle groups_group_deleted event
- *
- * @param object $event the event object.
- * @deprecated since 2.6, see {@link \mod_quiz\group_observers::group_deleted()}.
- */
-function quiz_groups_group_deleted_handler($event) {
-    global $DB;
-    debugging('quiz_groups_group_deleted_handler() is deprecated, please use ' .
-        '\mod_quiz\group_observers::group_deleted() instead.', DEBUG_DEVELOPER);
-    quiz_process_group_deleted_in_course($event->courseid);
-}
 
 /**
  * Logic to happen when a/some group(s) has/have been deleted in a course.
@@ -2028,22 +1990,6 @@ function quiz_process_group_deleted_in_course($courseid) {
 }
 
 /**
- * Handle groups_members_removed event
- *
- * @param object $event the event object.
- * @deprecated since 2.6, see {@link \mod_quiz\group_observers::group_member_removed()}.
- */
-function quiz_groups_members_removed_handler($event) {
-    debugging('quiz_groups_members_removed_handler() is deprecated, please use ' .
-        '\mod_quiz\group_observers::group_member_removed() instead.', DEBUG_DEVELOPER);
-    if ($event->userid == 0) {
-        quiz_update_open_attempts(array('courseid'=>$event->courseid));
-    } else {
-        quiz_update_open_attempts(array('courseid'=>$event->courseid, 'userid'=>$event->userid));
-    }
-}
-
-/**
  * Get the information about the standard quiz JavaScript module.
  * @return array a standard jsmodule structure.
  */
@@ -2065,137 +2011,6 @@ function quiz_get_js_module() {
     );
 }
 
-
-/**
- * An extension of question_display_options that includes the extra options used
- * by the quiz.
- *
- * @copyright  2010 The Open University
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-class mod_quiz_display_options extends question_display_options {
-    /**#@+
-     * @var integer bits used to indicate various times in relation to a
-     * quiz attempt.
-     */
-    const DURING =            0x10000;
-    const IMMEDIATELY_AFTER = 0x01000;
-    const LATER_WHILE_OPEN =  0x00100;
-    const AFTER_CLOSE =       0x00010;
-    /**#@-*/
-
-    /**
-     * @var boolean if this is false, then the student is not allowed to review
-     * anything about the attempt.
-     */
-    public $attempt = true;
-
-    /**
-     * @var boolean if this is false, then the student is not allowed to review
-     * anything about the attempt.
-     */
-    public $overallfeedback = self::VISIBLE;
-
-    /**
-     * Set up the various options from the quiz settings, and a time constant.
-     * @param object $quiz the quiz settings.
-     * @param int $one of the {@link DURING}, {@link IMMEDIATELY_AFTER},
-     * {@link LATER_WHILE_OPEN} or {@link AFTER_CLOSE} constants.
-     * @return mod_quiz_display_options set up appropriately.
-     */
-    public static function make_from_quiz($quiz, $when) {
-        $options = new self();
-
-        $options->attempt = self::extract($quiz->reviewattempt, $when, true, false);
-        $options->correctness = self::extract($quiz->reviewcorrectness, $when);
-        $options->marks = self::extract($quiz->reviewmarks, $when,
-                self::MARK_AND_MAX, self::MAX_ONLY);
-        $options->feedback = self::extract($quiz->reviewspecificfeedback, $when);
-        $options->generalfeedback = self::extract($quiz->reviewgeneralfeedback, $when);
-        $options->rightanswer = self::extract($quiz->reviewrightanswer, $when);
-        $options->overallfeedback = self::extract($quiz->reviewoverallfeedback, $when);
-
-        $options->numpartscorrect = $options->feedback;
-        $options->manualcomment = $options->feedback;
-
-        if ($quiz->questiondecimalpoints != -1) {
-            $options->markdp = $quiz->questiondecimalpoints;
-        } else {
-            $options->markdp = $quiz->decimalpoints;
-        }
-
-        return $options;
-    }
-
-    protected static function extract($bitmask, $bit,
-            $whenset = self::VISIBLE, $whennotset = self::HIDDEN) {
-        if ($bitmask & $bit) {
-            return $whenset;
-        } else {
-            return $whennotset;
-        }
-    }
-}
-
-/**
- * A {@link qubaid_condition} for finding all the question usages belonging to
- * a particular quiz.
- *
- * @copyright  2010 The Open University
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-class qubaids_for_quiz extends qubaid_join {
-    public function __construct($quizid, $includepreviews = true, $onlyfinished = false) {
-        $where = 'quiza.quiz = :quizaquiz';
-        $params = array('quizaquiz' => $quizid);
-
-        if (!$includepreviews) {
-            $where .= ' AND preview = 0';
-        }
-
-        if ($onlyfinished) {
-            $where .= ' AND state = :statefinished';
-            $params['statefinished'] = quiz_attempt::FINISHED;
-        }
-
-        parent::__construct('{quiz_attempts} quiza', 'quiza.uniqueid', $where, $params);
-    }
-}
-
-/**
- * A {@link qubaid_condition} for finding all the question usages belonging to a particular user and quiz combination.
- *
- * @copyright  2018 Andrew Nicols <andrwe@nicols.co.uk>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-class qubaids_for_quiz_user extends qubaid_join {
-    /**
-     * Constructor for this qubaid.
-     *
-     * @param   int     $quizid The quiz to search.
-     * @param   int     $userid The user to filter on
-     * @param   bool    $includepreviews Whether to include preview attempts
-     * @param   bool    $onlyfinished Whether to only include finished attempts or not
-     */
-    public function __construct($quizid, $userid, $includepreviews = true, $onlyfinished = false) {
-        $where = 'quiza.quiz = :quizaquiz AND quiza.userid = :quizauserid';
-        $params = [
-            'quizaquiz' => $quizid,
-            'quizauserid' => $userid,
-        ];
-
-        if (!$includepreviews) {
-            $where .= ' AND preview = 0';
-        }
-
-        if ($onlyfinished) {
-            $where .= ' AND state = :statefinished';
-            $params['statefinished'] = quiz_attempt::FINISHED;
-        }
-
-        parent::__construct('{quiz_attempts} quiza', 'quiza.uniqueid', $where, $params);
-    }
-}
 
 /**
  * Creates a textual representation of a question for display.
@@ -2262,34 +2077,6 @@ function quiz_require_question_use($questionid) {
     global $DB;
     $question = $DB->get_record('question', array('id' => $questionid), '*', MUST_EXIST);
     question_require_capability_on($question, 'use');
-}
-
-/**
- * Verify that the question exists, and the user has permission to use it.
- * @param object $quiz the quiz settings.
- * @param int $slot which question in the quiz to test.
- * @return bool whether the user can use this question.
- */
-function quiz_has_question_use($quiz, $slot) {
-    global $DB;
-
-    $sql = 'SELECT q.*
-              FROM {quiz_slots} slot
-              JOIN {question_references} qre ON qre.itemid = slot.id
-              JOIN {question_bank_entries} qbe ON qbe.id = qre.questionbankentryid
-              JOIN {question_versions} qve ON qve.questionbankentryid = qbe.id
-              JOIN {question} q ON q.id = qve.questionid
-             WHERE slot.quizid = ?
-               AND slot.slot = ?
-               AND qre.component = ?
-               AND qre.questionarea = ?';
-
-    $question = $DB->get_record_sql($sql, [$quiz->id, $slot, 'mod_quiz', 'slot']);
-
-    if (!$question) {
-        return false;
-    }
-    return question_has_capability_on($question, 'use');
 }
 
 /**
@@ -2563,16 +2350,15 @@ function quiz_view($quiz, $course, $cm, $context) {
 /**
  * Validate permissions for creating a new attempt and start a new preview attempt if required.
  *
- * @param  quiz $quizobj quiz object
- * @param  quiz_access_manager $accessmanager quiz access manager
+ * @param  quiz_settings $quizobj quiz object
+ * @param  access_manager $accessmanager quiz access manager
  * @param  bool $forcenew whether was required to start a new preview attempt
  * @param  int $page page to jump to in the attempt
  * @param  bool $redirect whether to redirect or throw exceptions (for web or ws usage)
  * @return array an array containing the attempt information, access error messages and the page to jump to in the attempt
- * @throws moodle_quiz_exception
  * @since Moodle 3.1
  */
-function quiz_validate_new_attempt(quiz $quizobj, quiz_access_manager $accessmanager, $forcenew, $page, $redirect) {
+function quiz_validate_new_attempt(quiz_settings $quizobj, access_manager $accessmanager, $forcenew, $page, $redirect) {
     global $DB, $USER;
     $timenow = time();
 
@@ -2612,7 +2398,7 @@ function quiz_validate_new_attempt(quiz $quizobj, quiz_access_manager $accessman
             if ($redirect) {
                 redirect($quizobj->review_url($lastattempt->id));
             } else {
-                throw new moodle_quiz_exception($quizobj, 'attemptalreadyclosed');
+                throw new moodle_exception('attemptalreadyclosed', 'quiz', $quizobj->view_url());
             }
         }
 
@@ -2648,7 +2434,7 @@ function quiz_validate_new_attempt(quiz $quizobj, quiz_access_manager $accessman
 /**
  * Prepare and start a new attempt deleting the previous preview attempts.
  *
- * @param quiz $quizobj quiz object
+ * @param quiz_settings $quizobj quiz object
  * @param int $attemptnumber the attempt number
  * @param object $lastattempt last attempt object
  * @param bool $offlineattempt whether is an offline attempt or not
@@ -2660,7 +2446,7 @@ function quiz_validate_new_attempt(quiz $quizobj, quiz_access_manager $accessman
  * @return object the new attempt
  * @since  Moodle 3.1
  */
-function quiz_prepare_and_start_new_attempt(quiz $quizobj, $attemptnumber, $lastattempt,
+function quiz_prepare_and_start_new_attempt(quiz_settings $quizobj, $attemptnumber, $lastattempt,
         $offlineattempt = false, $forcedrandomquestions = [], $forcedvariants = [], $userid = null) {
     global $DB, $USER;
 
@@ -2740,89 +2526,11 @@ function quiz_is_overriden_calendar_event(\calendar_event $event) {
 }
 
 /**
- * Retrieves tag information for the given list of quiz slot ids.
- * Currently the only slots that have tags are random question slots.
- *
- * Example:
- * If we have 3 slots with id 1, 2, and 3. The first slot has two tags, the second
- * has one tag, and the third has zero tags. The return structure will look like:
- * [
- *      1 => [
- *          quiz_slot_tags.id => { ...tag data... },
- *          quiz_slot_tags.id => { ...tag data... },
- *      ],
- *      2 => [
- *          quiz_slot_tags.id => { ...tag data... },
- *      ],
- *      3 => [],
- * ]
- *
- * @param int[] $slotids The list of id for the quiz slots.
- * @return array[] List of quiz_slot_tags records indexed by slot id.
- * @deprecated since Moodle 4.0
- * @todo Final deprecation on Moodle 4.4 MDL-72438
- */
-function quiz_retrieve_tags_for_slot_ids($slotids) {
-    debugging('Method quiz_retrieve_tags_for_slot_ids() is deprecated, ' .
-        'see filtercondition->tags from the question_set_reference table.', DEBUG_DEVELOPER);
-    global $DB;
-    if (empty($slotids)) {
-        return [];
-    }
-
-    $slottags = $DB->get_records_list('quiz_slot_tags', 'slotid', $slotids);
-    $tagsbyid = core_tag_tag::get_bulk(array_filter(array_column($slottags, 'tagid')), 'id, name');
-    $tagsbyname = false; // It will be loaded later if required.
-    $emptytagids = array_reduce($slotids, function($carry, $slotid) {
-        $carry[$slotid] = [];
-        return $carry;
-    }, []);
-
-    return array_reduce(
-        $slottags,
-        function($carry, $slottag) use ($slottags, $tagsbyid, $tagsbyname) {
-            if (isset($tagsbyid[$slottag->tagid])) {
-                // Make sure that we're returning the most updated tag name.
-                $slottag->tagname = $tagsbyid[$slottag->tagid]->name;
-            } else {
-                if ($tagsbyname === false) {
-                    // We were hoping that this query could be avoided, but life
-                    // showed its other side to us!
-                    $tagcollid = core_tag_area::get_collection('core', 'question');
-                    $tagsbyname = core_tag_tag::get_by_name_bulk(
-                        $tagcollid,
-                        array_column($slottags, 'tagname'),
-                        'id, name'
-                    );
-                }
-                if (isset($tagsbyname[$slottag->tagname])) {
-                    // Make sure that we're returning the current tag id that matches
-                    // the given tag name.
-                    $slottag->tagid = $tagsbyname[$slottag->tagname]->id;
-                } else {
-                    // The tag does not exist anymore (neither the tag id nor the tag name
-                    // matches an existing tag).
-                    // We still need to include this row in the result as some callers might
-                    // be interested in these rows. An example is the editing forms that still
-                    // need to display tag names even if they don't exist anymore.
-                    $slottag->tagid = null;
-                }
-            }
-
-            $carry[$slottag->slotid][$slottag->id] = $slottag;
-            return $carry;
-        },
-        $emptytagids
-    );
-}
-
-/**
  * Get quiz attempt and handling error.
  *
  * @param int $attemptid the id of the current attempt.
  * @param int|null $cmid the course_module id for this quiz.
- * @return quiz_attempt $attemptobj all the data about the quiz attempt.
- * @throws moodle_exception
+ * @return quiz_attempt all the data about the quiz attempt.
  */
 function quiz_create_attempt_handling_errors($attemptid, $cmid = null) {
     try {

@@ -40,6 +40,8 @@ require_once(__DIR__ . '/../config.php');
 require_once($CFG->dirroot . '/my/lib.php');
 require_once($CFG->libdir.'/adminlib.php');
 
+redirect_if_major_upgrade_required();
+
 $resetall = optional_param('resetall', false, PARAM_BOOL);
 
 $pagetitle = get_string('mypage', 'admin');
@@ -74,7 +76,7 @@ if ($resetall && confirm_sesskey()) {
 
 // Get the My Moodle page info.  Should always return something unless the database is broken.
 if (!$currentpage = my_get_page(null, MY_PAGE_PRIVATE)) {
-    print_error('mymoodlesetup');
+    throw new \moodle_exception('mymoodlesetup');
 }
 $PAGE->set_subpage($currentpage->id);
 

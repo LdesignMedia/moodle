@@ -24,8 +24,8 @@
  */
 namespace mod_quiz;
 
-use quiz_attempt;
-use mod_quiz_display_options;
+use mod_quiz\output\renderer;
+use mod_quiz\question\display_options;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -60,30 +60,31 @@ class locallib_test extends \advanced_testcase {
 
     public function quiz_attempt_state_data_provider() {
         return [
-            [quiz_attempt::IN_PROGRESS, null, null, mod_quiz_display_options::DURING],
-            [quiz_attempt::FINISHED, -90, null, mod_quiz_display_options::IMMEDIATELY_AFTER],
-            [quiz_attempt::FINISHED, -7200, null, mod_quiz_display_options::LATER_WHILE_OPEN],
-            [quiz_attempt::FINISHED, -7200, 3600, mod_quiz_display_options::LATER_WHILE_OPEN],
-            [quiz_attempt::FINISHED, -30, 30, mod_quiz_display_options::IMMEDIATELY_AFTER],
-            [quiz_attempt::FINISHED, -90, -30, mod_quiz_display_options::AFTER_CLOSE],
-            [quiz_attempt::FINISHED, -7200, -3600, mod_quiz_display_options::AFTER_CLOSE],
-            [quiz_attempt::FINISHED, -90, -3600, mod_quiz_display_options::AFTER_CLOSE],
-            [quiz_attempt::ABANDONED, -10000000, null, mod_quiz_display_options::LATER_WHILE_OPEN],
-            [quiz_attempt::ABANDONED, -7200, 3600, mod_quiz_display_options::LATER_WHILE_OPEN],
-            [quiz_attempt::ABANDONED, -7200, -3600, mod_quiz_display_options::AFTER_CLOSE],
+            [quiz_attempt::IN_PROGRESS, null, null, display_options::DURING],
+            [quiz_attempt::FINISHED, -90, null, display_options::IMMEDIATELY_AFTER],
+            [quiz_attempt::FINISHED, -7200, null, display_options::LATER_WHILE_OPEN],
+            [quiz_attempt::FINISHED, -7200, 3600, display_options::LATER_WHILE_OPEN],
+            [quiz_attempt::FINISHED, -30, 30, display_options::IMMEDIATELY_AFTER],
+            [quiz_attempt::FINISHED, -90, -30, display_options::AFTER_CLOSE],
+            [quiz_attempt::FINISHED, -7200, -3600, display_options::AFTER_CLOSE],
+            [quiz_attempt::FINISHED, -90, -3600, display_options::AFTER_CLOSE],
+            [quiz_attempt::ABANDONED, -10000000, null, display_options::LATER_WHILE_OPEN],
+            [quiz_attempt::ABANDONED, -7200, 3600, display_options::LATER_WHILE_OPEN],
+            [quiz_attempt::ABANDONED, -7200, -3600, display_options::AFTER_CLOSE],
         ];
     }
 
     /**
      * @dataProvider quiz_attempt_state_data_provider
      *
-     * @param unknown $attemptstate as in the quiz_attempts.state DB column.
-     * @param unknown $relativetimefinish time relative to now when the attempt finished, or null for 0.
-     * @param unknown $relativetimeclose time relative to now when the quiz closes, or null for 0.
-     * @param unknown $expectedstate expected result. One of the mod_quiz_display_options constants/
+     * @param string $attemptstate as in the quiz_attempts.state DB column.
+     * @param int|null $relativetimefinish time relative to now when the attempt finished, or null for 0.
+     * @param int|null $relativetimeclose time relative to now when the quiz closes, or null for 0.
+     * @param int $expectedstate expected result. One of the display_options constants.
+     * @covers ::quiz_attempt_state
      */
-    public function test_quiz_attempt_state($attemptstate,
-            $relativetimefinish, $relativetimeclose, $expectedstate) {
+    public function test_quiz_attempt_state(string $attemptstate,
+            ?int $relativetimefinish, ?int $relativetimeclose, int $expectedstate) {
 
         $attempt = new \stdClass();
         $attempt->state = $attemptstate;
@@ -516,7 +517,7 @@ class locallib_test extends \advanced_testcase {
         $generator = $this->getDataGenerator();
         /** @var mod_quiz_generator $quizgenerator */
         $quizgenerator = $generator->get_plugin_generator('mod_quiz');
-        /** @var mod_quiz_renderer $renderer */
+        /** @var renderer $renderer */
         $renderer = $PAGE->get_renderer('mod_quiz');
 
         // Course with quiz and a group - plus some others, to verify they don't get counted.

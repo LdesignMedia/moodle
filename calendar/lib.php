@@ -23,6 +23,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use core_external\external_api;
+
 if (!defined('MOODLE_INTERNAL')) {
     die('Direct access to this script is forbidden.');    ///  It must be included from a Moodle page
 }
@@ -478,7 +480,7 @@ class calendar_event {
         if (empty($this->properties->id) || $this->properties->id < 1) {
             if ($checkcapability) {
                 if (!calendar_add_event_allowed($this->properties)) {
-                    print_error('nopermissiontoupdatecalendar');
+                    throw new \moodle_exception('nopermissiontoupdatecalendar');
                 }
             }
 
@@ -594,7 +596,7 @@ class calendar_event {
 
             if ($checkcapability) {
                 if (!calendar_edit_event_allowed($this->properties)) {
-                    print_error('nopermissiontoupdatecalendar');
+                    throw new \moodle_exception('nopermissiontoupdatecalendar');
                 }
             }
 
@@ -810,7 +812,7 @@ class calendar_event {
                     // First check the course is valid.
                     $course = $DB->get_record('course', array('id' => $properties->courseid));
                     if (!$course) {
-                        print_error('invalidcourse');
+                        throw new \moodle_exception('invalidcourse');
                     }
                     // Course context.
                     $this->editorcontext = $this->get_context();
@@ -975,7 +977,7 @@ class calendar_event {
             $this->editorcontext = $this->get_context();
         }
 
-        return external_format_string($this->properties->name, $this->editorcontext->id);
+        return \core_external\util::format_string($this->properties->name, $this->editorcontext->id);
     }
 
     /**
@@ -993,7 +995,11 @@ class calendar_event {
 
             if (!calendar_is_valid_eventtype($this->properties->eventtype)) {
                 // We don't have a context here, do a normal format_text.
-                return external_format_text($this->properties->description, $this->properties->format, $this->editorcontext->id);
+                return \core_external\util::format_text(
+                    $this->properties->description,
+                    $this->properties->format,
+                    $this->editorcontext
+                );
             }
         }
 
@@ -1004,8 +1010,14 @@ class calendar_event {
             $itemid = $this->properties->id;
         }
 
-        return external_format_text($this->properties->description, $this->properties->format, $this->editorcontext->id,
-            'calendar', 'event_description', $itemid);
+        return \core_external\util::format_text(
+            $this->properties->description,
+            $this->properties->format,
+            $this->editorcontext,
+            'calendar',
+            'event_description',
+            $itemid
+        );
     }
 }
 
@@ -2360,7 +2372,8 @@ function calendar_edit_event_allowed($event, $manualedit = false) {
         return has_capability('moodle/calendar:manageentries', $event->context);
     } else if (!empty($event->userid) && $event->userid == $USER->id) {
         // If course is not set, but userid id set, it's a user event.
-        return (has_capability('moodle/calendar:manageownentries', $event->context));
+        return (has_capability('moodle/calendar:manageownentries',
+            context_user::instance($event->userid)));
     } else if (!empty($event->userid)) {
         return calendar_can_manage_user_event($event);
     }
@@ -2445,7 +2458,7 @@ function calendar_get_default_courses($courseid = null, $fields = '*', $canmanag
 
         $courses = get_courses('all', 'c.shortname', implode(',', $prefixedfields));
     } else {
-        $courses = enrol_get_users_courses($userid, true, $fields);
+        $courses = enrol_get_users_courses($userid, true, $fields, 'c.shortname');
     }
 
     if ($courseid && $courseid != SITEID) {
@@ -2875,7 +2888,7 @@ function calendar_add_subscription($sub) {
             return $sub->id;
         }
     } else {
-        print_error('errorbadsubscription', 'importcalendar');
+        throw new \moodle_exception('errorbadsubscription', 'importcalendar');
     }
 }
 
@@ -3091,11 +3104,21 @@ function calendar_import_events_from_ical(iCalendar $ical, int $subscriptionid =
         \core_php_time_limit::raise(300);
     }
 
+    // Start with a safe default timezone.
+    $timezone = 'UTC';
+
     // Grab the timezone from the iCalendar file to be used later.
     if (isset($ical->properties['X-WR-TIMEZONE'][0]->value)) {
         $timezone = $ical->properties['X-WR-TIMEZONE'][0]->value;
-    } else {
-        $timezone = 'UTC';
+
+    } else if (isset($ical->properties['PRODID'][0]->value)) {
+        // If the timezone was not found, check to se if this is MS exchange / Office 365 which uses Windows timezones.
+        if (strncmp($ical->properties['PRODID'][0]->value, 'Microsoft', 9) == 0) {
+            if (isset($ical->components['VTIMEZONE'][0]->properties['TZID'][0]->value)) {
+                $tzname = $ical->components['VTIMEZONE'][0]->properties['TZID'][0]->value;
+                $timezone = IntlTimeZone::getIDForWindowsID($tzname);
+            }
+        }
     }
 
     $icaluuids = [];
@@ -3619,7 +3642,7 @@ function calendar_output_fragment_event_form($args) {
         $event = calendar_event::load($eventid);
 
         if (!calendar_edit_event_allowed($event)) {
-            print_error('nopermissiontoupdatecalendar');
+            throw new \moodle_exception('nopermissiontoupdatecalendar');
         }
 
         $mapper = new \core_calendar\local\event\mappers\create_update_form_mapper();
@@ -3999,7 +4022,7 @@ function calendar_inplace_editable(string $itemtype, int $itemid, int $newvalue)
 
         $subscription = calendar_get_subscription($itemid);
         $context = calendar_get_calendar_context($subscription);
-        \external_api::validate_context($context);
+        external_api::validate_context($context);
 
         $updateresult = \core_calendar\output\refreshintervalcollection::update($itemid, $newvalue);
 
@@ -4014,5 +4037,5 @@ function calendar_inplace_editable(string $itemtype, int $itemid, int $newvalue)
         return $updateresult;
     }
 
-    \external_api::validate_context(context_system::instance());
+    external_api::validate_context(context_system::instance());
 }

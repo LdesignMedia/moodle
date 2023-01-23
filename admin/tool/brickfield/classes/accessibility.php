@@ -323,7 +323,7 @@ class accessibility {
     /**
      * This function runs one specified check on the html item
      *
-     * @param string $html The html string to be analysed; might be NULL.
+     * @param string|null $html The html string to be analysed; might be NULL.
      * @param int $contentid The content area ID
      * @param int $errid The error ID
      * @param string $check The check name to run
@@ -333,7 +333,7 @@ class accessibility {
      * @throws \dml_exception
      */
     public static function run_one_check(
-        string $html = null,
+        ?string $html,
         int $contentid,
         int $errid,
         string $check,
@@ -388,13 +388,13 @@ class accessibility {
                 // Confirm if error is reported separately.
                 if ($DB->record_exists_select(manager::DB_ERRORS,
                     'resultid = ? AND ' . $DB->sql_compare_text('htmlcode', 255) . ' = ' . $DB->sql_compare_text('?', 255),
-                    [$resultid, html_entity_decode($tmp->html)])) {
+                    [$resultid, html_entity_decode($tmp->html, ENT_COMPAT)])) {
                     continue;
                 }
                 $error = new stdClass();
                 $error->resultid = $resultid;
                 $error->linenumber = $tmp->line;
-                $error->htmlcode = html_entity_decode($tmp->html);
+                $error->htmlcode = html_entity_decode($tmp->html, ENT_COMPAT);
                 $errors[] = $error;
             }
 

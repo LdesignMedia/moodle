@@ -22,11 +22,12 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use mod_quiz\local\reports\attempts_report;
 use mod_quiz\question\bank\qbank_helper;
+use mod_quiz\quiz_attempt;
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once($CFG->dirroot . '/mod/quiz/report/attemptsreport.php');
 require_once($CFG->dirroot . '/mod/quiz/report/overview/overview_options.php');
 require_once($CFG->dirroot . '/mod/quiz/report/overview/overview_form.php');
 require_once($CFG->dirroot . '/mod/quiz/report/overview/overview_table.php');
@@ -38,7 +39,7 @@ require_once($CFG->dirroot . '/mod/quiz/report/overview/overview_table.php');
  * @copyright 1999 onwards Martin Dougiamas and others {@link http://moodle.com}
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class quiz_overview_report extends quiz_attempts_report {
+class quiz_overview_report extends attempts_report {
 
     /**
      * @var bool whether there are actually students to show, given the options.
@@ -203,7 +204,6 @@ class quiz_overview_report extends quiz_attempts_report {
 
             if ($options->slotmarks) {
                 foreach ($questions as $slot => $question) {
-                    // Ignore questions of zero length.
                     $columns[] = 'qsgrade' . $slot;
                     $header = get_string('qbrief', 'quiz', $question->number);
                     if (!$table->is_downloading()) {

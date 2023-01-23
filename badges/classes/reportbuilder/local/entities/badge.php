@@ -19,6 +19,7 @@ declare(strict_types=1);
 namespace core_badges\reportbuilder\local\entities;
 
 use context_course;
+use context_helper;
 use context_system;
 use html_writer;
 use lang_string;
@@ -48,7 +49,10 @@ class badge extends base {
      * @return array
      */
     protected function get_default_table_aliases(): array {
-        return ['badge' => 'b'];
+        return [
+            'badge' => 'b',
+            'context' => 'bctx',
+        ];
     }
 
     /**
@@ -88,7 +92,10 @@ class badge extends base {
      * @return column[]
      */
     protected function get_all_columns(): array {
+        global $DB;
+
         $badgealias = $this->get_table_alias('badge');
+        $contextalias = $this->get_table_alias('context');
 
         // Name.
         $columns[] = (new column(
@@ -101,7 +108,11 @@ class badge extends base {
             ->add_field("{$badgealias}.name")
             ->set_is_sortable(true);
 
-        // Description.
+        // Description (note, this column contains plaintext so requires no post-processing).
+        $descriptionfieldsql = "{$badgealias}.description";
+        if ($DB->get_dbfamily() === 'oracle') {
+            $descriptionfieldsql = $DB->sql_order_by_text($descriptionfieldsql, 1024);
+        }
         $columns[] = (new column(
             'description',
             new lang_string('description', 'core_badges'),
@@ -109,7 +120,7 @@ class badge extends base {
         ))
             ->add_joins($this->get_joins())
             ->set_type(column::TYPE_LONGTEXT)
-            ->add_field("{$badgealias}.description");
+            ->add_field($descriptionfieldsql, 'description');
 
         // Criteria.
         $columns[] = (new column(
@@ -123,7 +134,9 @@ class badge extends base {
             ->set_disabled_aggregation_all()
             ->add_callback(static function($badgeid): string {
                 global $PAGE;
-
+                if (!$badgeid) {
+                    return '';
+                }
                 $badge = new \core_badges\badge($badgeid);
 
                 $renderer = $PAGE->get_renderer('core_badges');
@@ -137,13 +150,24 @@ class badge extends base {
             $this->get_entity_name()
         ))
             ->add_joins($this->get_joins())
+            ->add_join("LEFT JOIN {context} {$contextalias}
+                    ON {$contextalias}.contextlevel = " . CONTEXT_COURSE . "
+                   AND {$contextalias}.instanceid = {$badgealias}.courseid")
             ->set_type(column::TYPE_INTEGER)
-            ->add_fields("{$badgealias}.id, {$badgealias}.type, {$badgealias}.courseid, {$badgealias}.imagecaption")
+            ->add_fields("{$badgealias}.id, {$badgealias}.type, {$badgealias}.courseid")
+            ->add_field($DB->sql_cast_to_char("{$badgealias}.imagecaption"), 'imagecaption')
+            ->add_fields(context_helper::get_preload_record_columns_sql($contextalias))
             ->set_disabled_aggregation_all()
-            ->add_callback(static function(int $badgeid, stdClass $badge): string {
-                $context = $badge->type == BADGE_TYPE_SITE
-                    ? context_system::instance()
-                    : context_course::instance($badge->courseid);
+            ->add_callback(static function(?int $badgeid, stdClass $badge): string {
+                if (!$badgeid) {
+                    return '';
+                }
+                if ($badge->type == BADGE_TYPE_SITE) {
+                    $context = context_system::instance();
+                } else {
+                    context_helper::preload_from_record($badge);
+                    $context = context_course::instance($badge->courseid);
+                }
 
                 $badgeimage = moodle_url::make_pluginfile_url($context->id, 'badges', 'badgeimage', $badgeid, '/', 'f2');
                 return html_writer::img($badgeimage, $badge->imagecaption);
@@ -161,7 +185,7 @@ class badge extends base {
             ->set_is_sortable(true)
             ->add_callback(static function($language): string {
                 $languages = get_string_manager()->get_list_of_languages();
-                return $languages[$language] ?? $language;
+                return $languages[$language] ?? $language ?? '';
             });
 
         // Version.
@@ -186,7 +210,7 @@ class badge extends base {
             ->add_field("{$badgealias}.status")
             ->set_is_sortable(true)
             ->add_callback(static function($status): string {
-                return get_string("badgestatus_{$status}", 'core_badges');
+                return $status ? get_string("badgestatus_{$status}", 'core_badges') : '';
             });
 
         // Expiry date/period.
@@ -197,11 +221,13 @@ class badge extends base {
         ))
             ->add_joins($this->get_joins())
             ->set_type(column::TYPE_TIMESTAMP)
-            ->add_fields("{$badgealias}.expiredate, {$badgealias}.expireperiod")
+            ->add_fields("{$badgealias}.expiredate, {$badgealias}.expireperiod, {$badgealias}.id")
             ->set_is_sortable(true, ["{$badgealias}.expiredate", "{$badgealias}.expireperiod"])
             ->set_disabled_aggregation_all()
-            ->add_callback(static function(int $expiredate, stdClass $badge): string {
-                if ($expiredate) {
+            ->add_callback(static function(?int $expiredate, stdClass $badge): string {
+                if (!$badge->id) {
+                    return '';
+                } else if ($expiredate) {
                     return userdate($expiredate);
                 } else if ($badge->expireperiod) {
                     return format_time($badge->expireperiod);

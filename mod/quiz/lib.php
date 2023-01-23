@@ -28,10 +28,17 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+use mod_quiz\access_manager;
+use mod_quiz\form\add_random_form;
 use mod_quiz\question\bank\custom_view;
+use mod_quiz\question\display_options;
+use mod_quiz\question\qubaids_for_quiz;
+use mod_quiz\question\qubaids_for_users_attempts;
+use core_question\statistics\questions\all_calculated_for_qubaid_condition;
+use mod_quiz\quiz_attempt;
+use mod_quiz\quiz_settings;
 
 require_once($CFG->dirroot . '/calendar/lib.php');
-
 
 /**#@+
  * Option controlling what options are offered on the quiz settings form.
@@ -186,7 +193,7 @@ function quiz_delete_instance($id) {
 
     $DB->delete_records('quiz_feedback', array('quizid' => $quiz->id));
 
-    quiz_access_manager::delete_settings($quiz);
+    access_manager::delete_settings($quiz);
 
     $events = $DB->get_records('event', array('modulename' => 'quiz', 'instance' => $quiz->id));
     foreach ($events as $event) {
@@ -413,7 +420,8 @@ function quiz_delete_all_attempts($quiz) {
 function quiz_delete_user_attempts($quiz, $user) {
     global $CFG, $DB;
     require_once($CFG->dirroot . '/mod/quiz/locallib.php');
-    question_engine::delete_questions_usage_by_activities(new qubaids_for_quiz_user($quiz->get_quizid(), $user->id));
+    question_engine::delete_questions_usage_by_activities(new qubaids_for_users_attempts(
+            $quiz->get_quizid(), $user->id, 'all'));
     $params = [
         'quiz' => $quiz->get_quizid(),
         'userid' => $user->id,
@@ -576,12 +584,7 @@ function quiz_user_complete($course, $user, $mod, $quiz) {
  *      array if there are none.
  */
 function quiz_get_user_attempts($quizids, $userid, $status = 'finished', $includepreviews = false) {
-    global $DB, $CFG;
-    // TODO MDL-33071 it is very annoying to have to included all of locallib.php
-    // just to get the quiz_attempt::FINISHED constants, but I will try to sort
-    // that out properly for Moodle 2.4. For now, I will just do a quick fix for
-    // MDL-33048.
-    require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+    global $DB;
 
     $params = array();
     switch ($status) {
@@ -654,7 +657,7 @@ function quiz_get_user_grades($quiz, $userid = 0) {
 /**
  * Round a grade to to the correct number of decimal places, and format it for display.
  *
- * @param object $quiz The quiz table row, only $quiz->decimalpoints is used.
+ * @param stdClass $quiz The quiz table row, only $quiz->decimalpoints is used.
  * @param float $grade The grade to round.
  * @return float
  */
@@ -686,9 +689,9 @@ function quiz_get_grade_format($quiz) {
 /**
  * Round a grade to the correct number of decimal places, and format it for display.
  *
- * @param object $quiz The quiz table row, only $quiz->decimalpoints is used.
+ * @param stdClass $quiz The quiz table row, only $quiz->decimalpoints is used.
  * @param float $grade The grade to round.
- * @return float
+ * @return string
  */
 function quiz_format_question_grade($quiz, $grade) {
     return format_float($grade, quiz_get_grade_format($quiz));
@@ -758,10 +761,10 @@ function quiz_grade_item_update($quiz, $grades = null) {
     // 2. If the quiz is set to not show grades at either of those times,
     //    create the grade_item as hidden.
     // 3. If the quiz is set to show grades, create the grade_item visible.
-    $openreviewoptions = mod_quiz_display_options::make_from_quiz($quiz,
-            mod_quiz_display_options::LATER_WHILE_OPEN);
-    $closedreviewoptions = mod_quiz_display_options::make_from_quiz($quiz,
-            mod_quiz_display_options::AFTER_CLOSE);
+    $openreviewoptions = display_options::make_from_quiz($quiz,
+            display_options::LATER_WHILE_OPEN);
+    $closedreviewoptions = display_options::make_from_quiz($quiz,
+            display_options::AFTER_CLOSE);
     if ($openreviewoptions->marks < question_display_options::MARK_AND_MAX &&
             $closedreviewoptions->marks < question_display_options::MARK_AND_MAX) {
         $params['hidden'] = 1;
@@ -1114,8 +1117,8 @@ function quiz_process_options($quiz) {
     $quiz->reviewgeneralfeedback = quiz_review_option_form_to_db($quiz, 'generalfeedback');
     $quiz->reviewrightanswer = quiz_review_option_form_to_db($quiz, 'rightanswer');
     $quiz->reviewoverallfeedback = quiz_review_option_form_to_db($quiz, 'overallfeedback');
-    $quiz->reviewattempt |= mod_quiz_display_options::DURING;
-    $quiz->reviewoverallfeedback &= ~mod_quiz_display_options::DURING;
+    $quiz->reviewattempt |= display_options::DURING;
+    $quiz->reviewoverallfeedback &= ~display_options::DURING;
 
     // Ensure that disabled checkboxes in completion settings are set to 0.
     // But only if the completion settinsg are unlocked.
@@ -1139,10 +1142,10 @@ function quiz_process_options($quiz) {
  */
 function quiz_review_option_form_to_db($fromform, $field) {
     static $times = array(
-        'during' => mod_quiz_display_options::DURING,
-        'immediately' => mod_quiz_display_options::IMMEDIATELY_AFTER,
-        'open' => mod_quiz_display_options::LATER_WHILE_OPEN,
-        'closed' => mod_quiz_display_options::AFTER_CLOSE,
+        'during' => display_options::DURING,
+        'immediately' => display_options::IMMEDIATELY_AFTER,
+        'open' => display_options::LATER_WHILE_OPEN,
+        'closed' => display_options::AFTER_CLOSE,
     );
 
     $review = 0;
@@ -1155,6 +1158,46 @@ function quiz_review_option_form_to_db($fromform, $field) {
     }
 
     return $review;
+}
+
+/**
+ * In place editable callback for slot displaynumber.
+ *
+ * @param string $itemtype slotdisplarnumber
+ * @param int $itemid the id of the slot in the quiz_slots table
+ * @param string $newvalue the new value for displaynumber field for a given slot in the quiz_slots table
+ * @return \core\output\inplace_editable|void
+ */
+function mod_quiz_inplace_editable(string $itemtype, int $itemid, string $newvalue): \core\output\inplace_editable {
+    if ($itemtype === 'slotdisplaynumber') {
+        global $DB;
+        $record = $DB->get_record('quiz_slots', ['id' => $itemid], '*', MUST_EXIST);
+        $quiz = $DB->get_record('quiz', array('id' => $record->quizid), '*', MUST_EXIST);
+        $cm = get_coursemodule_from_instance('quiz', $quiz->id, $quiz->course);
+        $course = $DB->get_record('course', array('id' => $quiz->course), '*', MUST_EXIST);
+
+        // Call validate_context for course module to check access and set current context.
+        $context = context_module::instance($cm->id);
+        \external_api::validate_context($context);
+
+        // Check permission of the user to update this item (customise question number).
+        require_capability('mod/quiz:manage', $context);
+
+        $quizobj = new quiz_settings($quiz, $cm, $course);
+        $structure = $quizobj->get_structure();
+        $warning = false;
+        // Clean input and update the record.
+        $record->displaynumber = s(clean_param($newvalue, PARAM_RAW));
+
+        // Truncate the string if the input string exceeds the size of the displaynumber field (16 chars) in the database.
+        if (strlen($record->displaynumber) > 16) {
+            $record->displaynumber = substr($record->displaynumber, 0, 16);
+        }
+        $structure->update_slot_display_number($itemid, $record->displaynumber);
+
+        // Prepare the element for the output.
+        return $structure->make_slot_display_number_in_place_editable($itemid, $context);
+    }
 }
 
 /**
@@ -1191,7 +1234,7 @@ function quiz_after_add_or_update($quiz) {
     }
 
     // Store any settings belonging to the access rules.
-    quiz_access_manager::save_settings($quiz);
+    access_manager::save_settings($quiz);
 
     // Update the events relating to this quiz.
     quiz_update_events($quiz);
@@ -1597,13 +1640,6 @@ function quiz_reset_userdata($data) {
 }
 
 /**
- * @deprecated since Moodle 3.3, when the block_course_overview block was removed.
- */
-function quiz_print_overview() {
-    throw new coding_exception('quiz_print_overview() can not be used any more and is obsolete.');
-}
-
-/**
  * Return a textual summary of the number of attempts that have been made at a particular quiz,
  * returns '' if no attempts have been made yet, unless $returnzero is passed as true.
  *
@@ -1920,7 +1956,7 @@ function quiz_check_updates_since(cm_info $cm, $from, $filter = array()) {
 
     // Check if questions were updated.
     $updates->questions = (object) array('updated' => false);
-    $quizobj = quiz::create($cm->instance, $USER->id);
+    $quizobj = quiz_settings::create($cm->instance, $USER->id);
     $quizobj->preload_questions();
     $quizobj->load_questions();
     $questionids = array_keys($quizobj->get_questions());
@@ -2017,7 +2053,7 @@ function mod_quiz_core_calendar_provide_event_action(calendar_event $event,
     }
 
     $cm = get_fast_modinfo($event->courseid, $userid)->instances['quiz'][$event->instance];
-    $quizobj = quiz::create($cm->instance, $userid);
+    $quizobj = quiz_settings::create($cm->instance, $userid);
     $quiz = $quizobj->get_quiz();
 
     // Check they have capabilities allowing them to view the quiz.
@@ -2414,7 +2450,6 @@ function mod_quiz_output_fragment_quiz_question_bank($args) {
  */
 function mod_quiz_output_fragment_add_random_question_form($args) {
     global $CFG;
-    require_once($CFG->dirroot . '/mod/quiz/addrandomform.php');
 
     $contexts = new \core_question\local\bank\question_edit_contexts($args['context']);
     $formoptions = [
@@ -2428,7 +2463,7 @@ function mod_quiz_output_fragment_add_random_question_form($args) {
         'cmid' => $args['cmid']
     ];
 
-    $form = new quiz_add_random_form(
+    $form = new add_random_form(
         new \moodle_url('/mod/quiz/addrandom.php'),
         $formoptions,
         'post',
@@ -2484,4 +2519,20 @@ function quiz_delete_references($quizid): void {
         // Delete any references.
         $DB->delete_records('question_references', $params);
     }
+}
+
+/**
+ * Implement the calculate_question_stats callback.
+ *
+ * This enables quiz statistics to be shown in statistics columns in the database.
+ *
+ * @param context $context return the statistics related to this context (which will be a quiz context).
+ * @return all_calculated_for_qubaid_condition|null The statistics for this quiz, if any, else null.
+ */
+function mod_quiz_calculate_question_stats(context $context): ?all_calculated_for_qubaid_condition {
+    global $CFG;
+    require_once($CFG->dirroot . '/mod/quiz/report/statistics/report.php');
+    $cm = get_coursemodule_from_id('quiz', $context->instanceid);
+    $report = new quiz_statistics_report();
+    return $report->calculate_questions_stats_for_question_bank($cm->instance);
 }

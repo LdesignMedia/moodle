@@ -1,8 +1,75 @@
 This files describes API changes in core libraries and APIs,
 information provided here is intended especially for developers.
 
+=== 4.2 ===
+
+* In enrollib.php, the methods get_enrolled_with_capabilities_join, get_enrolled_sql, get_enrolled_users and
+  count_enrolled_users used to only be able to accept a single group id, even though internally, they used
+  groups_get_members_join which could also accept an array of groups, or the constant USERSWITHOUTGROUP.
+  This has now been made consistent. These enrol methods now accept all the group-related options that
+  groups_get_members_join can handle.
+* assign_capability() now has an optional $performancehints parameter which can be used in
+  situations where it is being called in a loop in response to a database query, to reduce the
+  amount of checks it has to do.
+* New DB parameter 'versionfromdb', only available for MySQL and MariaDB drivers. It allows to force the DB version to be
+  evaluated through an explicit call to VERSION() to skip the PHP client version which appears to be sometimes fooled by the
+  underlying infrastructure, e.g. PaaS on Azure.
+* The actionmenu component has now a set_kebab_trigger that will setup the action menu for use in kebab menus.
+* The useexternalyui configuration setting has been removed as a part of the migration away from YUI.
+  It only worked with http sites and did not officially support SSL, and is at risk of disappearing should Yahoo! decide
+  to remove it.
+* New `properties_filter` method of persistent class for filtering properties of a record against persistent definition
+* Added 'extrainfo' in the DB options config. Its extra information for the DB driver, e.g. SQL Server
+  has additional configuration according to its environment, which the administrator can specify to alter and
+  override any connection options.
+* In outputcomponents.php, initials_bar() can now be rendered in a smaller (mini) way. This provides purely the
+  initials bar without the bootstrapping and form handling on each initials bar. If you use this mini render,
+  you'll need to implement your own form handling. Example usage can be found within the grader report.
+* There is a new helper function mtrace_exception to help with reporting exceptions you have caught in scheduled tasks.
+* Box/Spout has been archived and is no longer maintained, so it has now been removed and replaced by OpenSpout.
+* The following parts of the external API have been moved to the core_external subsystem:
+  Classes:
+    - external_api                      => core_external\external_api
+    - external_description              => core_external\external_description
+    - external_files                    => core_external\files
+    - external_format_value             => core_external\external_format_value
+    - external_function_parameters      => core_external\external_function_parameters
+    - external_multiple_structure       => core_external\external_multiple_structure
+    - external_settings                 => core_external\external_settings
+    - external_single_structure         => core_external\external_single_structure
+    - external_util                     => core_external\util
+    - external_value                    => core_external\external_value
+    - external_warnings                 => core_external\external_warnings
+    - restricted_context_exception      => core_external\restricted_context_exception
+  Functions:
+    - external_format_string()          => core_external\util::format_string()
+    - external_format_text()            => core_external\util::format_text()
+    - external_create_service_token()   => core_external\util::generate_token()
+    - external_generate_token()         => core_external\util::generate_token()
+    - external_generate_token_for_current_user()
+                                        => core_external\util::generate_token_for_current_user()
+    - external_log_token_request        => core_external\util::log_token_request()
+
+  The old class locations have been aliased for backwards compatibility and will emit a deprecation notice in a future
+  release.
+
 === 4.1 ===
 
+* HTMLPurifier has been upgraded to the latest version - 4.16.0
+* A process to deprecate capabilities by flagging them in the access.php by adding a $deprecatedcapabilities variable (an array).
+  This array will list the deprecated capabilities and a possible replacement. Once we declare the capability as deprecated, a debugging
+  message will be displayed (in DEBUG_DEVELOPPER mode only) when using the deprecated capability.
+  Declaration is as follow:
+    $deprecatedcapabilities = [
+        'fake/access:fakecapability' => ['replacement' => '', 'message' => 'This capability should not be used anymore.']
+    ];
+* coursemodinfo cache uses the new `requirelockingbeforewrite` option, and rebuilding the cache now uses the cache lock API, rather
+  than using the core lock factory directly. This allows the locks to be stored locally if the cache is stored locally, and
+  avoids the risk of delays and timeouts when multiple nodes need to rebuild the cache locally, but are waiting for a central lock.
+* Final deprecation and removal of the class \admin_setting_managelicenses, please use \tool_licensemanager\manager instead.
+* Final deprecation and removal of the function license_manager::add(). Please use license_manager::save() instead.
+* Final deprecation of the following functions behat_field_manager::get_node_type() and behat_field_manager::get_field()
+  please call behat_field_manager::get_field_node_type() and behat_field_manager::get_form_field().
 * Final deprecation and removal of the following class, please use \core\task\manager.
     - \tool_task\run_from_cli
 * Final deprecation and removal of the following CLI scripts:
@@ -11,6 +78,11 @@ information provided here is intended especially for developers.
 * Final deprecation and removal of cron_run_single_task(), please use \core\task\manager::run_from_cli().
 * The $USER->groupmember hack that fills the user object with the groups that the user belongs to has been removed.
   Please use the Groups API function groups_get_user_groups() to fetch the cached list of groups the user is a member of.
+* The following functions, previously used (exclusively) by upgrade steps are not available anymore
+  because of the upgrade cleanup performed for this version. See MDL-71747 for more info:
+    - upgrade_analytics_fix_contextids_defaults()
+    - upgrade_convert_hub_config_site_param_names()
+    - upgrade_rename_prediction_actions_useful_incorrectly_flagged()
 * The method ensure_adhoc_task_qos() in lib/classes/task/manager.php  has been deprecated, please use get_next_adhoc_task()
   instead.
 * New setting $CFG->enrolments_sync_interval controls the minimum time in seconds between re-synchronization of enrollment via enrol_check_plugins.
@@ -31,6 +103,19 @@ information provided here is intended especially for developers.
   plugin developers to not use this attribute for Moodle versions 4.0 and below in order to avoid this problem.
 * Added $CFG->proxylogunsafe and proxyfixunsafe to detect code which doesn't honor the proxy config
 * Function admin_externalpage_setup() now has additional option 'nosearch' allowing to remove Site administration search form.
+* The function print_error has been deprecated. Kindly use moodle_exception.
+* When exporting table content, HTML tags/entities will be removed when the selected dataformat does not support HTML
+* The abstract `get_name` method has been moved from `\core\task\scheduled_task` to the `\core\task\task_base` class and can now be
+  implemented by adhoc tasks. For backwards compatibility, a default implementation has been added to `\core\task\adhoc_task` to
+  return the class name.
+* The function get_module_metadata() has been finally deprecated and can not be used anymore.
+* New DML driver method `$DB->sql_order_by_null` for sorting nulls sort nulls first when ascending and last when descending.
+* Allow plugins to callback on all pages just prior to the session start.
+* New function set_additional_classes() has been implemented to add additional classes to action_menu.
+* Most Behat functionality for the Moodle App has been removed from core, refer to the documentation in order to upgrade your testing
+  setup: https://moodledev.io/general/app/development/testing/acceptance-testing#upgrading-tests-from-an-older-version
+* New DML driver methods `$DB->sql_regex_get_word_beginning_boundary_marker` and `$DB->sql_regex_get_word_end_boundary_marker`
+  for managing word boundary markers in a database driver supporting regex syntax when searching.
 
 === 4.0 ===
 
@@ -261,6 +346,8 @@ defined or can't be applied.
 * Add an early $CFG->session_redis_acquire_lock_warn option
 * Removed $CFG->conversionattemptlimit setting from config.php. assignfeedback_editpdf\task\convert_submissions task
   is now replaced with adhoc tasks with standard fail delay approach.
+* With strftime() being deprecated in PHP 8.1, a new function \core_date::strftime() that can be used as a PHP 8.1-compatible
+  alternative has been introduced.
 
 === 3.11.4 ===
 * A new option dontforcesvgdownload has been added to the $options parameter of the send_file() function.
@@ -1230,7 +1317,7 @@ the groupid field.
     - test_get_user_timezone_offset()
 * The google api library has been updated to version 1.1.7. There was some important changes
   on the SSL handling. Now the SSL version will be determined by the underlying library.
-  For more information see https://github.com/google/google-api-php-client/pull/644
+  For more information see https://github.com/googleapis/google-api-php-client/pull/644
 * The get_role_users() function will now add the $sort fields that are not part
   of the requested fields to the query result and will throw a debugging message
   with the added fields when that happens.

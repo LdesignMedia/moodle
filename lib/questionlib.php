@@ -721,9 +721,6 @@ function question_move_questions_to_category($questionids, $newcategoryid): bool
             question_bank::get_qtype($question->qtype)->move_files(
                     $question->id, $question->contextid, $newcategorydata->contextid);
         }
-        // Move set_reference records to new category.
-        move_question_set_references($question->category, $newcategoryid,
-            $question->contextid, $newcategorydata->contextid, true);
         // Check whether there could be a clash of idnumbers in the new category.
         list($idnumberclash, $rec) = idnumber_exist_in_question_category($question->idnumber, $newcategoryid);
         if ($idnumberclash) {
@@ -844,7 +841,7 @@ function question_move_category_to_context($categoryid, $oldcontextid, $newconte
 /**
  * Given a list of ids, load the basic information about a set of questions from
  * the questions table. The $join and $extrafields arguments can be used together
- * to pull in extra data. See, for example, the usage in mod/quiz/attemptlib.php, and
+ * to pull in extra data. See, for example, the usage in {@see \mod_quiz\quiz_attempt}, and
  * read the code below to see how the SQL is assembled. Throws exceptions on error.
  *
  * @param array $questionids array of question ids to load. If null, then all

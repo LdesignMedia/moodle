@@ -368,7 +368,7 @@ function file_get_unused_draft_itemid() {
 
     if (isguestuser() or !isloggedin()) {
         // guests and not-logged-in users can not be allowed to upload anything!!!!!!
-        print_error('noguest');
+        throw new \moodle_exception('noguest');
     }
 
     $contextid = context_user::instance($USER->id)->id;
@@ -2137,7 +2137,8 @@ function send_file_not_found() {
     }
 
     send_header_404();
-    print_error('filenotfound', 'error', $CFG->wwwroot.'/course/view.php?id='.$COURSE->id); //this is not displayed on IIS??
+    throw new \moodle_exception('filenotfound', 'error',
+        $CFG->wwwroot.'/course/view.php?id='.$COURSE->id); // This is not displayed on IIS?
 }
 /**
  * Helper function to send correct 404 for server.
@@ -2372,7 +2373,7 @@ function send_temp_file($path, $filename, $pathisstring=false) {
     if (!$pathisstring) {
         if (!file_exists($path)) {
             send_header_404();
-            print_error('filenotfound', 'error', $CFG->wwwroot.'/');
+            throw new \moodle_exception('filenotfound', 'error', $CFG->wwwroot.'/');
         }
         // executed after normal finish or abort
         core_shutdown_manager::register_function('send_temp_file_finished', array($path));
@@ -3331,7 +3332,11 @@ class curl {
                     throw new coding_exception('Curl options should be defined using strings, not constant values.');
                 }
                 if (stripos($name, 'CURLOPT_') === false) {
-                    $name = strtoupper('CURLOPT_'.$name);
+                    // Only prefix with CURLOPT_ if the option doesn't contain CURLINFO_,
+                    // which is a valid prefix for at least one option CURLINFO_HEADER_OUT.
+                    if (stripos($name, 'CURLINFO_') === false) {
+                        $name = strtoupper('CURLOPT_'.$name);
+                    }
                 } else {
                     $name = strtoupper($name);
                 }
@@ -4200,14 +4205,14 @@ class curl {
         $crlf = "\r\n";
         return preg_replace(
                 // HTTP version and status code (ignore value of code).
-                '~^HTTP/1\..*' . $crlf .
+                '~^HTTP/[1-9](\.[0-9])?.*' . $crlf .
                 // Header name: character between 33 and 126 decimal, except colon.
                 // Colon. Header value: any character except \r and \n. CRLF.
                 '(?:[\x21-\x39\x3b-\x7e]+:[^' . $crlf . ']+' . $crlf . ')*' .
                 // Headers are terminated by another CRLF (blank line).
                 $crlf .
                 // Second HTTP status code, this time must be 200.
-                '(HTTP/1.[01] 200 )~', '$1', $input);
+                '(HTTP/[1-9](\.[0-9])? 200)~', '$2', $input);
     }
 }
 
@@ -4355,16 +4360,16 @@ function file_pluginfile($relativepath, $forcedownload, $preview = null, $offlin
     global $DB, $CFG, $USER;
     // relative path must start with '/'
     if (!$relativepath) {
-        print_error('invalidargorconf');
+        throw new \moodle_exception('invalidargorconf');
     } else if ($relativepath[0] != '/') {
-        print_error('pathdoesnotstartslash');
+        throw new \moodle_exception('pathdoesnotstartslash');
     }
 
     // extract relative path components
     $args = explode('/', ltrim($relativepath, '/'));
 
     if (count($args) < 3) { // always at least context, component and filearea
-        print_error('invalidarguments');
+        throw new \moodle_exception('invalidarguments');
     }
 
     $contextid = (int)array_shift($args);
@@ -4388,7 +4393,7 @@ function file_pluginfile($relativepath, $forcedownload, $preview = null, $offlin
         }
 
         if (empty($CFG->enableblogs)) {
-            print_error('siteblogdisable', 'blog');
+            throw new \moodle_exception('siteblogdisable', 'blog');
         }
 
         $entryid = (int)array_shift($args);
@@ -4398,7 +4403,7 @@ function file_pluginfile($relativepath, $forcedownload, $preview = null, $offlin
         if ($CFG->bloglevel < BLOG_GLOBAL_LEVEL) {
             require_login();
             if (isguestuser()) {
-                print_error('noguest');
+                throw new \moodle_exception('noguest');
             }
             if ($CFG->bloglevel == BLOG_USER_LEVEL) {
                 if ($USER->id != $entry->userid) {
@@ -5128,16 +5133,26 @@ function file_pluginfile($relativepath, $forcedownload, $preview = null, $offlin
             send_file_not_found();
         }
 
+        $componentargs = fullclone($args);
         $itemid = (int)array_shift($args);
         $filename = array_pop($args);
         $filepath = $args ? '/'.implode('/', $args).'/' : '/';
-        if (!$file = $fs->get_file($context->id, $component, $filearea, $itemid, $filepath, $filename) or
-            $file->is_directory()) {
-            send_file_not_found();
-        }
 
         \core\session\manager::write_close(); // Unlock session during file serving.
-        send_stored_file($file, 0, 0, true, $sendfileoptions); // must force download - security!
+
+        $contenttype = $DB->get_field('contentbank_content', 'contenttype', ['id' => $itemid]);
+        if (component_class_callback("\\{$contenttype}\\contenttype", 'pluginfile',
+                [$course, null, $context, $filearea, $componentargs, $forcedownload, $sendfileoptions], false) === false) {
+
+            if (!$file = $fs->get_file($context->id, $component, $filearea, $itemid, $filepath, $filename) or
+
+                $file->is_directory()) {
+                send_file_not_found();
+
+            } else {
+                send_stored_file($file, 0, 0, true, $sendfileoptions); // Must force download - security!
+            }
+        }
     } else if (strpos($component, 'mod_') === 0) {
         $modname = substr($component, 4);
         if (!file_exists("$CFG->dirroot/mod/$modname/lib.php")) {

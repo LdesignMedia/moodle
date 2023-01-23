@@ -14,15 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-/**
- * Quiz attempt walk through using data from csv file.
- *
- * @package    mod_quiz
- * @category   phpunit
- * @copyright  2013 The Open University
- * @author     Jamie Pratt <me@jamiep.org>
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
+namespace mod_quiz;
+
+use question_engine;
+use mod_quiz\quiz_settings;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -33,12 +28,12 @@ require_once($CFG->dirroot . '/mod/quiz/locallib.php');
  * Quiz attempt walk through using data from csv file.
  *
  * @package    mod_quiz
- * @category   phpunit
+ * @category   test
  * @copyright  2013 The Open University
  * @author     Jamie Pratt <me@jamiep.org>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class mod_quiz_attempt_walkthrough_from_csv_testcase extends advanced_testcase {
+class attempt_walkthrough_from_csv_test extends \advanced_testcase {
 
     protected $files = array('questions', 'steps', 'results');
 
@@ -250,7 +245,7 @@ class mod_quiz_attempt_walkthrough_from_csv_testcase extends advanced_testcase {
 
             if (!isset($attemptids[$step['quizattempt']])) {
                 // Start the attempt.
-                $quizobj = quiz::create($this->quiz->id, $user->id);
+                $quizobj = quiz_settings::create($this->quiz->id, $user->id);
                 $quba = question_engine::make_questions_usage_by_activity('mod_quiz', $quizobj->get_context());
                 $quba->set_preferred_behaviour($quizobj->get_quiz()->preferredbehaviour);
 
@@ -330,7 +325,7 @@ class mod_quiz_attempt_walkthrough_from_csv_testcase extends advanced_testcase {
                                                         "Mark for slot $slotno of attempt {$result['quizattempt']}.");
                                     break;
                                 default :
-                                    throw new coding_exception('Unknown slots sub field column in csv file '
+                                    throw new \coding_exception('Unknown slots sub field column in csv file '
                                                                .s($slotfieldname));
                             }
                         }
@@ -360,7 +355,7 @@ class mod_quiz_attempt_walkthrough_from_csv_testcase extends advanced_testcase {
                     $this->assertEquals($value, $gradebookgrade->grade, "Gradebook grade for attempt {$result['quizattempt']}.");
                     break;
                 default :
-                    throw new coding_exception('Unknown column in csv file '.s($fieldname));
+                    throw new \coding_exception('Unknown column in csv file '.s($fieldname));
             }
         }
     }

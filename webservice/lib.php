@@ -23,7 +23,11 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-require_once($CFG->libdir.'/externallib.php');
+use core_external\external_api;
+use core_external\external_multiple_structure;
+use core_external\external_settings;
+use core_external\external_single_structure;
+use core_external\external_value;
 
 /**
  * WEBSERVICE_AUTHMETHOD_USERNAME - username/password authentication (also called simple authentication)
@@ -684,7 +688,8 @@ class webservice {
             }
         }
 
-        if (empty($servicecaps)) {
+        // Bail out early if there's nothing to process.
+        if (empty($users) || empty($servicecaps)) {
             return [];
         }
 
@@ -898,7 +903,7 @@ class webservice_access_exception extends moodle_exception {
 /**
  * Check if a protocol is enabled
  *
- * @param string $protocol name of WS protocol ('rest', 'soap', 'xmlrpc'...)
+ * @param string $protocol name of WS protocol ('rest', 'soap', ...)
  * @return bool true if the protocol is enabled
  */
 function webservice_protocol_is_enabled($protocol) {
@@ -1820,7 +1825,7 @@ $castingcode
         $function->classname::$function->methodname($paramsstr);
         return null;
     }
-    return external_api::clean_returnvalue($callforreturnvaluedesc, $function->classname::$function->methodname($paramsstr));
+    return \\core_external\\external_api::clean_returnvalue($callforreturnvaluedesc, $function->classname::$function->methodname($paramsstr));
 EOD;
         return $methodbody;
     }

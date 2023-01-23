@@ -3738,6 +3738,7 @@ class restore_activity_competencies_structure_step extends restore_structure_ste
             // Sortorder is ignored by precaution, anyway we should walk through the records in the right order.
             $record = (object) $params;
             $record->ruleoutcome = $data->ruleoutcome;
+            $record->overridegrade = $data->overridegrade;
             $coursemodulecompetency = new \core_competency\course_module_competency(0, $record);
             $coursemodulecompetency->create();
         }
@@ -4239,7 +4240,8 @@ class restore_block_instance_structure_step extends restore_structure_step {
 
         // Look for the parent contextid
         if (!$data->parentcontextid = $this->get_mappingid('context', $data->parentcontextid)) {
-            throw new restore_step_exception('restore_block_missing_parent_ctx', $data->parentcontextid);
+            // Parent contextid does not exist, ignore this block.
+            return false;
         }
 
         // TODO: it would be nice to use standard plugin supports instead of this instance_allow_multiple()
@@ -4285,14 +4287,17 @@ class restore_block_instance_structure_step extends restore_structure_step {
                 $params['subpagepattern'] = $data->subpagepattern;
             }
 
-            $exists = $DB->record_exists_sql("SELECT bi.id
+            $existingblock = $DB->get_records_sql("SELECT bi.id
                                                 FROM {block_instances} bi
                                                 JOIN {block} b ON b.name = bi.blockname
                                                WHERE bi.blockname = :blockname
                                                  AND $contextsql
                                                  AND bi.pagetypepattern $pagetypepatternsql
                                                  AND $subpagepatternsql", $params);
-            if ($exists) {
+            if (!empty($existingblock)) {
+                // Save the context mapping in case something else is linking to this block's context.
+                $newcontext = context_block::instance(reset($existingblock)->id);
+                $this->set_mapping('context', $oldcontextid, $newcontext->id);
                 // There is at least one very similar block visible on the page where we
                 // are trying to restore the block. In these circumstances the block API
                 // would not allow the user to add another instance of the block, so we
@@ -4311,6 +4316,9 @@ class restore_block_instance_structure_step extends restore_structure_step {
         if ($birecs = $DB->get_records('block_instances', $params)) {
             foreach($birecs as $birec) {
                 if ($birec->configdata == $data->configdata) {
+                    // Save the context mapping in case something else is linking to this block's context.
+                    $newcontext = context_block::instance($birec->id);
+                    $this->set_mapping('context', $oldcontextid, $newcontext->id);
                     return false;
                 }
             }
@@ -4491,6 +4499,10 @@ class restore_module_structure_step extends restore_structure_step {
             $data->availability = upgrade_group_members_only($data->groupingid, $data->availability);
         }
 
+        if (!has_capability('moodle/course:setforcedlanguage', context_course::instance($data->course))) {
+            unset($data->lang);
+        }
+
         // course_module record ready, insert it
         $newitemid = $DB->insert_record('course_modules', $data);
         // save mapping
@@ -4669,7 +4681,11 @@ class restore_userscompletion_structure_step extends restore_structure_step {
 
         $paths = array();
 
+        // Restore completion.
         $paths[] = new restore_path_element('completion', '/completions/completion');
+
+        // Restore completion view.
+        $paths[] = new restore_path_element('completionview', '/completions/completionviews/completionview');
 
         return $paths;
     }
@@ -4699,6 +4715,29 @@ class restore_userscompletion_structure_step extends restore_structure_step {
             // Normal entry where it doesn't exist already
             $DB->insert_record('course_modules_completion', $data);
         }
+
+        // Add viewed to course_modules_viewed.
+        if (isset($data->viewed) && $data->viewed) {
+            $dataview = clone($data);
+            unset($dataview->id);
+            unset($dataview->viewed);
+            $dataview->timecreated = $data->timemodified;
+            $DB->insert_record('course_modules_viewed', $dataview);
+        }
+    }
+
+    /**
+     * Process the completioinview data.
+     * @param array $data The data from the XML file.
+     */
+    protected function process_completionview(array $data) {
+        global $DB;
+
+        $data = (object)$data;
+        $data->coursemoduleid = $this->task->get_moduleid();
+        $data->userid = $this->get_mappingid('user', $data->userid);
+
+        $DB->insert_record('course_modules_viewed', $data);
     }
 }
 
@@ -5254,6 +5293,7 @@ class restore_move_module_questions_categories extends restore_execution_step {
                                                        AND parentitemid = ?", array($this->get_restoreid(), $contextid));
                 $top = question_get_top_category($newcontext->newitemid, true);
                 $oldtopid = 0;
+                $categoryids = [];
                 foreach ($modulecats as $modulecat) {
                     // Before 3.5, question categories could be created at top level.
                     // From 3.5 onwards, all question categories should be a child of a special category called the "top" category.
@@ -5269,12 +5309,37 @@ class restore_move_module_questions_categories extends restore_execution_step {
                             $cat->parent = $top->id;
                         }
                         $DB->update_record('question_categories', $cat);
+                        $categoryids[] = (int)$cat->id;
                     }
 
                     // And set new contextid (and maybe update newitemid) also in question_category mapping (will be
                     // used by {@link restore_create_question_files} later.
                     restore_dbops::set_backup_ids_record($this->get_restoreid(), 'question_category', $modulecat->itemid,
                             $modulecat->newitemid, $newcontext->newitemid);
+                }
+
+                // Update the context id of any tags applied to any questions in these categories.
+                if ($categoryids) {
+                    [$categorysql, $categoryidparams] = $DB->get_in_or_equal($categoryids, SQL_PARAMS_NAMED);
+                    $sqlupdate = "UPDATE {tag_instance}
+                                     SET contextid = :newcontext
+                                   WHERE component = :component
+                                         AND itemtype = :itemtype
+                                         AND itemid IN (SELECT DISTINCT bi.newitemid as questionid
+                                                          FROM {backup_ids_temp} bi
+                                                          JOIN {question} q ON q.id = bi.newitemid
+                                                          JOIN {question_versions} qv ON qv.questionid = q.id
+                                                          JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                                                         WHERE bi.backupid = :backupid AND bi.itemname = 'question_created'
+                                                               AND qbe.questioncategoryid {$categorysql}) ";
+                    $params = [
+                        'newcontext' => $newcontext->newitemid,
+                        'component' => 'core_question',
+                        'itemtype' => 'question',
+                        'backupid' => $this->get_restoreid(),
+                    ];
+                    $params += $categoryidparams;
+                    $DB->execute($sqlupdate, $params);
                 }
 
                 // Now set the parent id for the question categories that were in the top category in the course context
@@ -5446,7 +5511,8 @@ class restore_process_file_aliases_queue extends restore_execution_step {
                 continue;
             }
 
-            if ($info->oldfile->repositorytype === 'local' or $info->oldfile->repositorytype === 'coursefiles') {
+            if ($info->oldfile->repositorytype === 'local' || $info->oldfile->repositorytype === 'coursefiles'
+                    || $info->oldfile->repositorytype === 'contentbank') {
                 // Aliases to Server files and Legacy course files may refer to a file
                 // contained in the backup file or to some existing file (if we are on the
                 // same site).
@@ -5609,7 +5675,8 @@ class restore_process_file_aliases_queue extends restore_execution_step {
 
             // Both Server files and Legacy course files repositories have a single
             // instance at the system context to use. Let us try to find it.
-            if ($info->oldfile->repositorytype === 'local' or $info->oldfile->repositorytype === 'coursefiles') {
+            if ($info->oldfile->repositorytype === 'local' || $info->oldfile->repositorytype === 'coursefiles'
+                    || $info->oldfile->repositorytype === 'contentbank') {
                 $sql = "SELECT ri.id
                           FROM {repository} r
                           JOIN {repository_instances} ri ON ri.typeid = r.id
