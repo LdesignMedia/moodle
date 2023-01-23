@@ -78,6 +78,7 @@ class extend_h5p_test extends \advanced_testcase {
      * Test the behaviour of add_assets_to_page
      *
      * @dataProvider add_assets_to_page_provider
+     *
      * @param string $embedtype
      *
      * @return void
