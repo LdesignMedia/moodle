@@ -126,7 +126,7 @@ class player {
         $this->core = $this->factory->get_core();
 
         // Get the H5P identifier linked to this URL.
-        list($file, $this->h5pid) = api::create_content_from_pluginfile_url(
+        [$file, $this->h5pid] = api::create_content_from_pluginfile_url(
             $url,
             $config,
             $this->factory,
@@ -179,7 +179,7 @@ class player {
         $template->embedurl = $fileurl->out(false);
 
         if ($displayedit) {
-            list($originalfile, $h5p) = api::get_original_content_from_pluginfile_url($url, $preventredirect, true);
+            [$originalfile, $h5p] = api::get_original_content_from_pluginfile_url($url, $preventredirect, true);
             if ($originalfile) {
                 // Check if the user can edit this content.
                 if (api::can_edit_content($originalfile)) {
@@ -462,7 +462,43 @@ class player {
         $h5poutput->h5p_alter_scripts($files['scripts'], $preloadeddeps, $this->embedtype);
         $h5poutput->h5p_alter_styles($files['styles'], $preloadeddeps, $this->embedtype);
 
+        // Add additional files from callbacks.
+        $files['scripts'] = array_merge($files['scripts'], $this->load_files_plugin_callbacks('scripts'));
+        $files['styles'] = array_merge($files['styles'], $this->load_files_plugin_callbacks('styles'));
+
         return $files;
+    }
+
+    /**
+     * Load callback files from plugins only supports an array with PARAM_PATH.
+     *
+     * @param string $type
+     *
+     * @return array
+     */
+    private function load_files_plugin_callbacks(string $type): array {
+
+        $pluginsfunction = get_plugins_with_function('extend_h5p_' . $type);
+
+        if (empty($pluginsfunction)) {
+            return [];
+        }
+
+        $files = [];
+        foreach ($pluginsfunction as $plugins) {
+            foreach ($plugins as $pluginfunction) {
+                $files = $pluginfunction($this->embedtype);
+
+                if (!is_array($files)) {
+                    debugging('Please make sure you return an array with files paths"' . s($pluginfunction) . '".',
+                        DEBUG_DEVELOPER);
+                }
+            }
+        }
+
+        return array_map(static function($path) {
+            return (object) ['path' => (string) $path];
+        }, $files);
     }
 
     /**
