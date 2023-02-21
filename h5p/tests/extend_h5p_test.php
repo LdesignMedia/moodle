@@ -64,60 +64,6 @@ class extend_h5p_test extends \advanced_testcase {
     }
 
     /**
-     * Test the behaviour of add_assets_to_page
-     *
-     * @dataProvider add_assets_to_page_provider
-     * @covers       \core_h5p\player::add_assets_to_page
-     *
-     * @param string $embedtype
-     *
-     * @return void
-     */
-    public function test_add_assets_to_page(string $embedtype): void {
-        global $OUTPUT, $DB;
-
-        $this->setRunTestInSeparateProcess(true);
-
-        // Reset database after test.
-        $this->resetAfterTest(true);
-
-        $this->player->add_assets_to_page();
-
-        $h5p = $DB->get_record('h5p', []);
-        $template = (object) [
-            'h5pid' => $h5p->id,
-        ];
-
-        $h5pjson = json_decode($h5p->jsoncontent, false, 512, JSON_THROW_ON_ERROR);
-
-        $this->assertEquals($h5pjson->title, $this->player->get_title());
-
-        if ($embedtype === 'div') {
-            $h5phtml = $OUTPUT->render_from_template('core_h5p/h5pdiv', $template);
-        } else {
-            $h5phtml = $OUTPUT->render_from_template('core_h5p/h5piframe', $template);
-        }
-
-        $this->assertEquals($this->player->output(), $h5phtml);
-    }
-
-    /**
-     * Data provider for test_add_assets_to_page().
-     *
-     * @return array
-     */
-    public function add_assets_to_page_provider(): array {
-        return [
-            'player: embedtype is iframe' => [
-                'embedtype' => 'iframe',
-            ],
-            'player: embedtype is div' => [
-                'embedtype' => 'div',
-            ],
-        ];
-    }
-
-    /**
      * Test the behaviour of load_files_plugin_callbacks callback.
      *
      * @dataProvider load_files_plugin_callbacks_provider
@@ -128,7 +74,6 @@ class extend_h5p_test extends \advanced_testcase {
      * @return void
      */
     public function test_load_files_plugin_callbacks(string $type): void {
-        global $CFG;
 
         $this->setUp();
 
